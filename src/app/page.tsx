@@ -1,103 +1,118 @@
-import Image from "next/image";
+"use client";
+import React, { useState } from "react";
+import ResultsList from "@/components/ResultsList";
+import { Earmark } from "@/types/database.types";
 
-export default function Home() {
+export default function HomePage() {
+  const [query, setQuery] = useState("");
+  const [filters, setFilters] = useState<{ year: string; member: string }>({ year: "", member: "" });
+  const [results, setResults] = useState<Earmark[]>([]);
+  
+  // Conversational state
+  const [messages, setMessages] = useState<{ role: "user"|"assistant", content: string }[]>([]);
+  const [currentMessage, setCurrentMessage] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+
+  // Search
+  const handleSearch = async () => {
+    const res = await fetch("/api/search", {
+      method: "POST",
+      body: JSON.stringify({ query, filters })
+    });
+    const data = await res.json();
+    setResults(data.data || []);
+  };
+
+  // Conversational AI Ask
+  const handleSend = async () => {
+    if (!currentMessage.trim()) return;
+    const newMessages = [...messages, { role: "user", content: currentMessage }];
+    setMessages(newMessages);
+    setCurrentMessage("");
+    setAiLoading(true);
+
+    const res = await fetch("/api/askai", {
+      method: "POST",
+      body: JSON.stringify({ messages: newMessages })
+    });
+    const data = await res.json();
+    setMessages([...newMessages, { role: "assistant", content: data.answer }]);
+    setAiLoading(false);
+  };
+
+  // Clear all
+  const handleClearAll = () => {
+    setFilters({ year: "", member: "" });
+    setQuery("");
+    setResults([]);
+    setMessages([]);
+    setCurrentMessage("");
+  };
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <div className="app-bg">
+      <header className="app-header">
+        <span className="app-title">Mosaic</span>
+      </header>
+      <main className="main-content">
+        <div className="search-card">
+          {/* Conversational Chat Section */}
+          <section className="search-section">
+            <label className="section-label">Ask a question</label>
+            <div className="chat-box" style={{border:"1px solid #ddd", maxHeight: 200, overflowY: "auto", marginBottom: 8, padding: 8}}>
+              {messages.map((msg, i) =>
+                <div key={i} style={{marginBottom: 6, color: msg.role === "assistant" ? "#314ed4" : "#222"}}>
+                  <b>{msg.role === "user" ? "You" : "AI"}</b>: {msg.content}
+                </div>
+              )}
+              {aiLoading && <div><b>AI:</b> Thinking...</div>}
+            </div>
+            <form onSubmit={e => { e.preventDefault(); handleSend(); }}>
+              <input
+                value={currentMessage}
+                onChange={e => setCurrentMessage(e.target.value)}
+                placeholder="Type your question..."
+                className="input-wide"
+                disabled={aiLoading}
+              />
+              <button type="submit" disabled={aiLoading || !currentMessage.trim()} className="primary-btn">
+                Send
+              </button>
+            </form>
+          </section>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+          {/* Earmark Search Section */}
+          <section className="search-section">
+            <label htmlFor="search-query" className="section-label">Search earmarks</label>
+            <input
+              id="search-query"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search earmarks..."
+              className="input-wide"
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+            <div className="filter-row">
+              <input
+                value={filters.year}
+                onChange={e => setFilters(f => ({ ...f, year: e.target.value }))}
+                placeholder="Year"
+                className="input-short"
+              />
+              <input
+                value={filters.member}
+                onChange={e => setFilters(f => ({ ...f, member: e.target.value }))}
+                placeholder="Member"
+                className="input-medium"
+              />
+              <button onClick={handleSearch} className="primary-btn">Search</button>
+              <button onClick={handleClearAll} className="secondary-btn">Clear</button>
+            </div>
+          </section>
+        </div>
+        <div className="results-section">
+          <ResultsList results={results} />
         </div>
       </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
     </div>
   );
 }

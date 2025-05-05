@@ -1,26 +1,174 @@
-@import "tailwindcss";
+/* src/app/globals.css */
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+body, html {
+  background: #f4f6fa;
+  color: #222;
+  font-family: 'Inter', sans-serif;
+  margin: 0;
+  padding: 0;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+.app-bg {
+  min-height: 100vh;
+  background: #f4f6fa;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+.app-header {
+  background: #4f1edc;
+  padding: 24px 0 16px 0;
+  text-align: left;
+}
+
+.app-title {
+  color: #fff;
+  font-size: 2rem;
+  font-weight: 700;
+  margin-left: 48px;
+  letter-spacing: 2px;
+}
+
+.main-content {
+  max-width: 900px;
+  margin: 32px auto 0 auto;
+  padding: 0 16px;
+}
+
+.search-card {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+  padding: 32px 32px 24px 32px;
+  margin-bottom: 32px;
+}
+
+.search-section {
+  margin-bottom: 24px;
+}
+
+.section-label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #4f1edc;
+}
+
+.input-wide {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  margin-bottom: 12px;
+  font-size: 1rem;
+}
+
+.input-short {
+  width: 90px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  font-size: 1rem;
+}
+
+.input-medium {
+  width: 180px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  font-size: 1rem;
+}
+
+.button-row, .filter-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.primary-btn {
+  background: #4f1edc;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 24px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.primary-btn:disabled {
+  background: #a78bfa;
+  cursor: not-allowed;
+}
+.primary-btn:hover:not(:disabled) {
+  background: #3b0ca7;
+}
+
+.secondary-btn {
+  background: #e5e7eb;
+  color: #222;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 24px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.secondary-btn:hover {
+  background: #d1d5db;
+}
+
+.ai-answer {
+  background: #eef;
+  padding: 12px;
+  margin-top: 12px;
+  border-radius: 8px;
+  white-space: pre-line;
+}
+
+.results-section {
+  margin-top: 0;
+}
+
+/* Table styles for ResultsList */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+}
+thead tr {
+  background: #4f1edc;
+  color: #fff;
+}
+th, td {
+  padding: 12px 10px;
+  text-align: left;
+}
+th {
+  font-weight: 700;
+  font-size: 1rem;
+}
+tbody tr:nth-child(even) {
+  background: #f4f6fa;
+}
+tbody tr:nth-child(odd) {
+  background: #fff;
+}
+tbody td {
+  font-size: 0.98rem;
+}
+
+@media (max-width: 700px) {
+  .main-content {
+    padding: 0 4px;
   }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  .search-card {
+    padding: 16px 6px 12px 6px;
+  }
+  .app-title {
+    margin-left: 16px;
+    font-size: 1.3rem;
+  }
 }
