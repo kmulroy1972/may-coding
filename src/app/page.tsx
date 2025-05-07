@@ -1,19 +1,60 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import ResultsList from "@/components/ResultsList";
-import { Earmark } from "@/types/database.types";
+import ReactMarkdown from "react-markdown";
+import { sendMessageToAI } from "@/lib/sendMessageToAI";
+import "./globals.css";
+
+interface Message {
+  text: string;
+  sender: "user" | "ai";
+}
 
 export default function HomePage() {
+  // Chat state
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  async function handleSend(e: React.FormEvent) {
+    e.preventDefault();
+    if (!input.trim()) return;
+    const userMessage: Message = { text: input, sender: "user" };
+    setMessages((ms) => [...ms, userMessage]);
+    setIsLoading(true);
+    setInput("");
+    try {
+      const aiResponse = await sendMessageToAI(input);
+      setMessages((ms) => [
+        ...ms,
+        { text: aiResponse, sender: "ai" },
+      ]);
+    } catch (err) {
+      setMessages((ms) => [
+        ...ms,
+        { text: "Error fetching AI response.", sender: "ai" },
+      ]);
+    }
+    setIsLoading(false);
+  }
+
+  function handleInputKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend(e as any);
+    }
+  }
+
+  // Search state
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState<{ year: string; member: string }>({ year: "", member: "" });
-  const [results, setResults] = useState<Earmark[]>([]);
-  
-  // Conversational state
-  const [messages, setMessages] = useState<{ role: "user"|"assistant", content: string }[]>([]);
-  const [currentMessage, setCurrentMessage] = useState("");
-  const [aiLoading, setAiLoading] = useState(false);
+  const [results, setResults] = useState<any[]>([]);
 
-  // Search
   const handleSearch = async () => {
     const res = await fetch("/api/search", {
       method: "POST",
@@ -23,67 +64,61 @@ export default function HomePage() {
     setResults(data.data || []);
   };
 
-  // Conversational AI Ask
-  const handleSend = async () => {
-    if (!currentMessage.trim()) return;
-    const newMessages = [...messages, { role: "user", content: currentMessage }];
-    setMessages(newMessages);
-    setCurrentMessage("");
-    setAiLoading(true);
-
-    const res = await fetch("/api/askai", {
-      method: "POST",
-      body: JSON.stringify({ messages: newMessages })
-    });
-    const data = await res.json();
-    setMessages([...newMessages, { role: "assistant", content: data.answer }]);
-    setAiLoading(false);
-  };
-
-  // Clear all
   const handleClearAll = () => {
     setFilters({ year: "", member: "" });
     setQuery("");
     setResults([]);
     setMessages([]);
-    setCurrentMessage("");
+    setInput("");
   };
 
   return (
-    <div className="app-bg">
-      <header className="app-header">
-        <span className="app-title">Mosaic</span>
+    <div className="main-bg">
+      <header className="main-header">
+        <span className="main-title">Mosaic</span>
       </header>
-      <main className="main-content">
-        <div className="search-card">
-          {/* Conversational Chat Section */}
-          <section className="search-section">
-            <label className="section-label">Ask a question</label>
-            <div className="chat-box" style={{border:"1px solid #ddd", maxHeight: 200, overflowY: "auto", marginBottom: 8, padding: 8}}>
-              {messages.map((msg, i) =>
-                <div key={i} style={{marginBottom: 6, color: msg.role === "assistant" ? "#314ed4" : "#222"}}>
-                  <b>{msg.role === "user" ? "You" : "AI"}</b>: {msg.content}
-                </div>
-              )}
-              {aiLoading && <div><b>AI:</b> Thinking...</div>}
-            </div>
-            <form onSubmit={e => { e.preventDefault(); handleSend(); }}>
-              <input
-                value={currentMessage}
-                onChange={e => setCurrentMessage(e.target.value)}
-                placeholder="Type your question..."
-                className="input-wide"
-                disabled={aiLoading}
-              />
-              <button type="submit" disabled={aiLoading || !currentMessage.trim()} className="primary-btn">
-                Send
-              </button>
-            </form>
-          </section>
-
-          {/* Earmark Search Section */}
-          <section className="search-section">
-            <label htmlFor="search-query" className="section-label">Search earmarks</label>
+      <main className="main-flex">
+        {/* Chat Section */}
+        <section className="chat-panel">
+          <h2 className="section-title">AI Assistant</h2>
+          <div className="chat-messages-panel">
+            {messages.map((msg, idx) => (
+              <div
+                key={idx}
+                className={`chat-bubble ${msg.sender}`}
+              >
+                <ReactMarkdown>{msg.text}</ReactMarkdown>
+              </div>
+            ))}
+            {isLoading && (
+              <div className="chat-bubble ai">
+                <div className="loader">Thinking...</div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+          <form className="chat-input-form" onSubmit={handleSend}>
+            <textarea
+              className="chat-input"
+              placeholder="Type your message. Shift+Enter for newline."
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleInputKeyDown}
+              rows={2}
+            />
+            <button
+              className="chat-send-btn"
+              type="submit"
+              disabled={isLoading}
+            >
+              Send
+            </button>
+          </form>
+        </section>
+        {/* Search & Results Section */}
+        <section className="search-panel">
+          <h2 className="section-title">Earmark Search</h2>
+          <div className="search-card search-card-contrast">
             <input
               id="search-query"
               value={query}
@@ -107,11 +142,11 @@ export default function HomePage() {
               <button onClick={handleSearch} className="primary-btn">Search</button>
               <button onClick={handleClearAll} className="secondary-btn">Clear</button>
             </div>
-          </section>
-        </div>
-        <div className="results-section">
-          <ResultsList results={results} />
-        </div>
+          </div>
+          <div className="results-section">
+            <ResultsList results={results} />
+          </div>
+        </section>
       </main>
     </div>
   );
