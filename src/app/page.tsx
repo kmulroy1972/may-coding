@@ -1,48 +1,62 @@
 "use client";
+
 import React, { useState, useRef, useEffect } from "react";
-import ResultsList from "@/components/ResultsList";
 import ReactMarkdown from "react-markdown";
 import { sendMessageToAI } from "@/lib/sendMessageToAI";
 import "./globals.css";
 
+/* ── Types ─────────────────────────────────────────── */
 interface Message {
   text: string;
   sender: "user" | "ai";
+  typing?: boolean;               // used for optional typewriter CSS
 }
 
+/* ── Component ─────────────────────────────────────── */
 export default function HomePage() {
-  // Chat state
+  /* Chat state */
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
+  /* Scroll to latest message */
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  /* Send user text to backend */
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
     if (!input.trim()) return;
-    const userMessage: Message = { text: input, sender: "user" };
-    setMessages((ms) => [...ms, userMessage]);
+
+    const userMsg: Message = { text: input, sender: "user" };
+    setMessages((ms) => [...ms, userMsg]);
     setIsLoading(true);
     setInput("");
+
     try {
+      /* set typing flag so CSS typewriter animates */
+      setMessages((ms) => [...ms, { text: "…", sender: "ai", typing: true }]);
+
       const aiResponse = await sendMessageToAI(input);
+
+      /* replace placeholder with real response */
       setMessages((ms) => [
-        ...ms,
+        ...ms.slice(0, -1),
         { text: aiResponse, sender: "ai" },
       ]);
-    } catch (err) {
+    } catch {
       setMessages((ms) => [
-        ...ms,
+        ...ms.slice(0, -1),
         { text: "Error fetching AI response.", sender: "ai" },
       ]);
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }
 
+  /* handle Enter vs Shift‑Enter */
   function handleInputKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -50,57 +64,51 @@ export default function HomePage() {
     }
   }
 
-  // Search state
-  const [query, setQuery] = useState("");
-  const [filters, setFilters] = useState<{ year: string; member: string }>({ year: "", member: "" });
-  const [results, setResults] = useState<any[]>([]);
+  /* ── Dark‑mode toggle ───────────────────────────── */
+  function toggleTheme() {
+    const root = document.documentElement;
+    root.dataset.theme = root.dataset.theme === "dark" ? "" : "dark";
+  }
 
-  const handleSearch = async () => {
-    const res = await fetch("/api/search", {
-      method: "POST",
-      body: JSON.stringify({ query, filters })
-    });
-    const data = await res.json();
-    setResults(data.data || []);
-  };
-
-  const handleClearAll = () => {
-    setFilters({ year: "", member: "" });
-    setQuery("");
-    setResults([]);
-    setMessages([]);
-    setInput("");
-  };
-
+  /* ── Render ─────────────────────────────────────── */
   return (
     <div className="main-bg">
       <header className="main-header">
         <span className="main-title">Mosaic</span>
+        <button onClick={toggleTheme} className="theme-btn">
+          ☾ / ☀︎
+        </button>
       </header>
+
       <main className="main-flex">
-        {/* Chat Section */}
         <section className="chat-panel">
           <h2 className="section-title">AI Assistant</h2>
+
           <div className="chat-messages-panel">
             {messages.map((msg, idx) => (
               <div
                 key={idx}
-                className={`chat-bubble ${msg.sender}`}
+                className={`chat-bubble ${msg.sender} ${
+                  msg.sender === "ai" && !msg.typing ? "markdown" : ""
+                }`}
               >
                 <ReactMarkdown>{msg.text}</ReactMarkdown>
               </div>
             ))}
+
             {isLoading && (
               <div className="chat-bubble ai">
                 <div className="loader">Thinking...</div>
               </div>
             )}
+
             <div ref={messagesEndRef} />
           </div>
+
           <form className="chat-input-form" onSubmit={handleSend}>
             <textarea
               className="chat-input"
-              placeholder="Type your message. Shift+Enter for newline."
+              placeholder="Type your message. Shift+Enter for newline."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleInputKeyDown}
@@ -114,38 +122,6 @@ export default function HomePage() {
               Send
             </button>
           </form>
-        </section>
-        {/* Search & Results Section */}
-        <section className="search-panel">
-          <h2 className="section-title">Earmark Search</h2>
-          <div className="search-card search-card-contrast">
-            <input
-              id="search-query"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Search earmarks..."
-              className="input-wide"
-            />
-            <div className="filter-row">
-              <input
-                value={filters.year}
-                onChange={e => setFilters(f => ({ ...f, year: e.target.value }))}
-                placeholder="Year"
-                className="input-short"
-              />
-              <input
-                value={filters.member}
-                onChange={e => setFilters(f => ({ ...f, member: e.target.value }))}
-                placeholder="Member"
-                className="input-medium"
-              />
-              <button onClick={handleSearch} className="primary-btn">Search</button>
-              <button onClick={handleClearAll} className="secondary-btn">Clear</button>
-            </div>
-          </div>
-          <div className="results-section">
-            <ResultsList results={results} />
-          </div>
         </section>
       </main>
     </div>

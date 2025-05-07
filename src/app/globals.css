@@ -277,3 +277,57 @@ tbody td {
     padding: 0 4px;
   }
 }
+/* 1. color tokens */
+:root {
+  --bg: #f6f7fb;
+  --bg-panel: #ffffff;
+  --text: #1a1a1a;
+  --bubble-user: #0052cc;
+  --bubble-ai: #f0f0f5;
+}
+
+[data-theme="dark"] {
+  --bg: #101215;
+  --bg-panel: #1a1d23;
+  --text: #e0e2e7;
+  --bubble-user: #3b6cf6;
+  --bubble-ai: #1f242d;
+}
+
+/* 2. use tokens */
+body, .main-bg { background: var(--bg); color: var(--text); }
+.chat-panel { background: var(--bg-panel); }
+.chat-bubble.user { background: var(--bubble-user); color: #fff; }
+.chat-bubble.ai   { background: var(--bubble-ai); }
+
+/* optional shadow / subtle round corners */
+.chat-bubble { border-radius: 12px; padding: 10px 14px; box-shadow: 0 1px 3px rgb(0 0 0 / .08); }
+
+.chat-bubble table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.chat-bubble th,
+.chat-bubble td {
+  padding: 6px 8px;
+  border: 1px solid var(--bubble-ai);
+}
+.chat-bubble tr:nth-child(even) {
+  background: rgba(0 0 0 / .03);
+}
+[data-theme="dark"] .chat-bubble tr:nth-child(even) {
+  background: rgba(255 255 255 / .05);
+}
+/* ===== typewriter effect ===== */
+@keyframes typewriter {
+  from { width: 0; }
+  to   { width: 100%; }
+}
+
+.chat-bubble.ai.markdown p {
+  display: inline-block;
+  overflow: hidden;      /* clip text */
+  white-space: nowrap;   /* keep on one line */
+  animation: typewriter 1.2s steps(30, end) .2s 1 both;
+}
