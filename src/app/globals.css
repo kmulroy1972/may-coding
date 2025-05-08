@@ -1,7 +1,7 @@
 /* src/app/globals.css */
 
 body, html {
-  background: #f4f6fa;
+  background: pink !important;
   color: #222;
   font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
   margin: 0;
@@ -10,7 +10,7 @@ body, html {
 
 .main-bg {
   min-height: 100vh;
-  background: #f4f8fc;
+  /* background: #f4f8fc; */
 }
 
 .main-header {
@@ -70,16 +70,24 @@ body, html {
   border: 1px solid #e3eaf7;
 }
 
+.chat-bubble,
+.chat-bubble * {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  white-space: pre-line; /* This preserves line breaks and wraps long lines */
+}
+
 .chat-bubble {
+  border-radius: 12px;
+  padding: 10px 14px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / .08);
   margin-bottom: 0.8rem;
   line-height: 1.5;
   word-break: break-word;
-  padding: 0.85em 1em;
-  border-radius: 13px;
+  overflow-wrap: anywhere;
+  font-size: 1.04rem;
   max-width: 90%;
   clear: both;
-  box-shadow: 0 2px 5px rgba(40, 66, 120, 0.06);
-  font-size: 1.04rem;
 }
 .chat-bubble.user {
   align-self: flex-end;
@@ -93,6 +101,27 @@ body, html {
   color: #254182;
   border-top-left-radius: 2px;
   border: 1px solid #e3eaf7;
+}
+
+.chat-bubble .chat-table,
+.chat-bubble table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.chat-bubble th,
+.chat-bubble td {
+  padding: 6px 8px;
+  border: 1px solid var(--bubble-ai, #e3eaff);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.chat-bubble tr:nth-child(even) {
+  background: rgba(0 0 0 / .03);
 }
 
 .loader {
@@ -330,4 +359,17 @@ body, .main-bg { background: var(--bg); color: var(--text); }
   overflow: hidden;      /* clip text */
   white-space: nowrap;   /* keep on one line */
   animation: typewriter 1.2s steps(30, end) .2s 1 both;
+}
+
+
+/* Typewriter effect for latest AI message */
+.typewriter p {
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  animation: typewriter 1.2s steps(30, end) .2s 1 both;
+}
+@keyframes typewriter {
+  from { width: 0; }
+  to   { width: 100%; }
 }

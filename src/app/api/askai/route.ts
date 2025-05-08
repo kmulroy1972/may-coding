@@ -88,8 +88,16 @@ async function queryEarmarks(f: ReturnType<typeof extractEntities>): Promise<Ear
 /* ────────────────────────── API handler ────────────────────────── */
 export async function POST(req: NextRequest) {
   try {
-    const { question } = await req.json();
-    const q = (question ?? '').trim();
+    const body = await req.json();
+    // Accept both 'question' and 'messages' from frontend
+    let q = '';
+    if (body.messages && Array.isArray(body.messages) && body.messages.length > 0) {
+      // Use the latest message as the question
+      const lastMsg = body.messages[body.messages.length - 1];
+      q = lastMsg.text || lastMsg.content || '';
+    } else {
+      q = (body.question ?? '').trim();
+    }
 
     const filters  = extractEntities(q);
     const earmarks = await queryEarmarks(filters);

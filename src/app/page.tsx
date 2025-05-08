@@ -90,9 +90,14 @@ export default function HomePage() {
                 key={idx}
                 className={`chat-bubble ${msg.sender} ${
                   msg.sender === "ai" && !msg.typing ? "markdown" : ""
-                }`}
+                } ${msg.sender === "ai" && idx === messages.length - 1 && msg.typing ? "typewriter" : ""}`}
+                style={{wordBreak: 'break-word', overflowWrap: 'anywhere'}}
               >
-                <ReactMarkdown>{msg.text}</ReactMarkdown>
+                <ReactMarkdown
+                  components={{ table: ({ node, ...props }) => <table {...props} className="chat-table" /> }}
+                >
+                  {msg.text}
+                </ReactMarkdown>
               </div>
             ))}
 
