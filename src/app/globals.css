@@ -354,22 +354,10 @@ body, .main-bg { background: var(--bg); color: var(--text); }
   to   { width: 100%; }
 }
 
-.chat-bubble.ai.markdown p {
-  display: inline-block;
-  overflow: hidden;      /* clip text */
-  white-space: nowrap;   /* keep on one line */
-  animation: typewriter 1.2s steps(30, end) .2s 1 both;
-}
-
-
-/* Typewriter effect for latest AI message */
+.chat-bubble.ai.markdown p,
 .typewriter p {
-  display: inline-block;
+  display: block;
   overflow: hidden;
-  white-space: nowrap;
+  white-space: pre-line;
   animation: typewriter 1.2s steps(30, end) .2s 1 both;
-}
-@keyframes typewriter {
-  from { width: 0; }
-  to   { width: 100%; }
 }

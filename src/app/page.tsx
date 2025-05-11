@@ -6,11 +6,11 @@ import { sendMessageToAI } from "@/lib/sendMessageToAI";
 import "./globals.css";
 
 /* ── Types ─────────────────────────────────────────── */
-interface Message {
+type Message = {
   text: string;
-  sender: "user" | "ai";
+  sender: 'user' | 'ai';
   typing?: boolean;               // used for optional typewriter CSS
-}
+};
 
 /* ── Component ─────────────────────────────────────── */
 export default function HomePage() {
@@ -19,6 +19,7 @@ export default function HomePage() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   /* Scroll to latest message */
   useEffect(() => {
@@ -60,7 +61,7 @@ export default function HomePage() {
   function handleInputKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSend(e as any);
+      formRef.current?.requestSubmit();
     }
   }
 
@@ -94,7 +95,7 @@ export default function HomePage() {
                 style={{wordBreak: 'break-word', overflowWrap: 'anywhere'}}
               >
                 <ReactMarkdown
-                  components={{ table: ({ node, ...props }) => <table {...props} className="chat-table" /> }}
+                  components={{ table: (props) => <table {...props} className="chat-table" /> }}
                 >
                   {msg.text}
                 </ReactMarkdown>
@@ -110,7 +111,7 @@ export default function HomePage() {
             <div ref={messagesEndRef} />
           </div>
 
-          <form className="chat-input-form" onSubmit={handleSend}>
+          <form ref={formRef} className="chat-input-form" onSubmit={handleSend}>
             <textarea
               className="chat-input"
               placeholder="Type your message. Shift+Enter for newline."

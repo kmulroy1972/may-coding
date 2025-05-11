@@ -3,7 +3,7 @@ import { ChatOpenAI } from '@langchain/openai';
 import { PromptTemplate } from '@langchain/core/prompts';
 import { LLMChain } from 'langchain/chains';
 import { supabase } from '@/lib/supabase';
-import type { Earmark } from '@/types';
+import type { Earmark } from 'types/database.types';
 
 /* ───────────────────────────── OpenAI ───────────────────────────── */
 const llm = new ChatOpenAI({
@@ -100,10 +100,9 @@ export async function POST(req: NextRequest) {
     }
 
     const filters  = extractEntities(q);
-    const earmarks = await queryEarmarks(filters);
+    const earmarks: Earmark[] = await queryEarmarks(filters);
 
     /* ── context string & markdown table build ─────────────────── */
-    const fmt = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
     const total = earmarks.reduce((sum, e) => sum + (e.amount || 0), 0);
     const header = earmarks.length
       ? `Matched ${earmarks.length} earmark${earmarks.length > 1 ? 's' : ''} worth ${fmt(total)}.`
