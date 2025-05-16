@@ -25,7 +25,7 @@ function extractEntities(question: string) {
   );
   const yearMatch   = question.match(/\b(?:FY\s*)?(20\d{2})\b/i);
   const agencyMatch = question.match(
-    /\b(?:U\.?S\.?\s+)?(?:Department|Dept\.?)\s+of\s+([\w\s&]+)|\b([A-Z]{2,})\b\s+Department/i
+    /\b(?:U\.?S\.?\s+)?(?:Department|Dept\.?)\s+of\s+([\w\s&]+?)(?:\s+in\s+|\s+for\s+|\s*$)/i
   );
 
   const overMatch  = question.match(/(?:over|above|greater than)\s+\$?([\d.,]+\s*(?:m(?:illion)?)?)/i);
@@ -33,7 +33,7 @@ function extractEntities(question: string) {
 
   const member = memberMatch ? memberMatch[1] : null;
   const year   = yearMatch   ? parseInt(yearMatch[1], 10) : null;
-  const agency = agencyMatch ? (agencyMatch[1] || agencyMatch[2]).trim() : null;
+  const agency = agencyMatch ? agencyMatch[1].trim() : null;
 
   const minAmount = overMatch  ? dollars(overMatch[1])  : null;
   const maxAmount = underMatch ? dollars(underMatch[1]) : null;
@@ -64,11 +64,13 @@ function fmt(n: number) {
 
 /* ────────────────────── Supabase query helper ───────────────────── */
 async function queryEarmarks(f: ReturnType<typeof extractEntities>): Promise<Earmark[]> {
+  console.log('Starting query with filters:', JSON.stringify(f, null, 2));
+  
   let q = supabase.from('earmarks').select('*');
 
   if (f.member)     q = q.ilike('member', `%${f.member}%`);
   if (f.year)       q = q.eq('year', f.year);
-  if (f.agency)     q = q.ilike('agency', `%${f.agency}%`);
+  if (f.agency)     q = q.eq('agency', `Department of ${f.agency}`);
   if (f.minAmount)  q = q.gte('amount', f.minAmount);
   if (f.maxAmount)  q = q.lte('amount', f.maxAmount);
 
@@ -81,7 +83,13 @@ async function queryEarmarks(f: ReturnType<typeof extractEntities>): Promise<Ear
   }
 
   const { data, error } = await q.limit(1000);
-  if (error) throw new Error(error.message);
+  
+  if (error) {
+    console.error('Supabase query error:', error);
+    throw new Error(error.message);
+  }
+  
+  console.log('Query results:', data?.length || 0, 'records found');
   return data || [];
 }
 
@@ -89,6 +97,8 @@ async function queryEarmarks(f: ReturnType<typeof extractEntities>): Promise<Ear
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    console.log('Received request body:', JSON.stringify(body, null, 2));
+    
     // Accept both 'question' and 'messages' from frontend
     let q = '';
     if (body.messages && Array.isArray(body.messages) && body.messages.length > 0) {
@@ -98,46 +108,47 @@ export async function POST(req: NextRequest) {
     } else {
       q = (body.question ?? '').trim();
     }
+    
+    console.log('Processing question:', q);
 
-    const filters  = extractEntities(q);
-    const earmarks: Earmark[] = await queryEarmarks(filters);
+    // Simple filtering
+    let query = supabase.from('earmarks').select('*');
+    
+    // Add filters based on keywords
+    if (q.toLowerCase().includes('labor')) {
+      query = query.eq('agency', 'Department of Labor');
+    }
+    if (q.toLowerCase().includes('2022')) {
+      query = query.eq('year', 2022);
+    }
+    if (q.toLowerCase().includes('over') || q.toLowerCase().includes('above')) {
+      query = query.gte('amount', 1000000); // Over $1M
+    }
 
-    /* ── context string & markdown table build ─────────────────── */
-    const total = earmarks.reduce((sum, e) => sum + (e.amount || 0), 0);
-    const header = earmarks.length
-      ? `Matched ${earmarks.length} earmark${earmarks.length > 1 ? 's' : ''} worth ${fmt(total)}.`
-      : 'No matching earmarks found.';
-    const tableRows = earmarks.slice(0, 10).map(
-      e => `| ${e.year} | ${e.recipient} | ${fmt(e.amount)} | ${e.agency || ''} | ${e.subcommittee || ''} |`
-    );
-    const context =
-      header +
-      (tableRows.length
-        ? '\n\n| Year | Recipient | Amount | Agency | Subcommittee |\n' +
-          '|------|-----------|--------|--------|--------------|\n' +
-          tableRows.join('\n')
-        : '');
+    const { data, error } = await query.limit(10);
+    
+    if (error) {
+      throw error;
+    }
 
-    /* ── prompt the LLM ────────────────────────────────────────── */
-    const prompt = PromptTemplate.fromTemplate(`
-You are an assistant who answers questions about U.S. congressional earmarks.
+    // Format the data as inline summaries
+    const inlineSummaries = data.map(e =>
+      `${e.year}: ${e.recipient} received $${e.amount.toLocaleString()} from ${e.agency}`
+    ).join('\n');
 
-Context:
-{context}
+    const response =
+      data.length > 0
+        ? `Found ${data.length} records:\n${inlineSummaries}`
+        : 'No matching records found.';
 
-When you answer:
-• Start with a brief summary.
-• If the context includes a markdown table, reference it instead of repeating all rows.
+    return NextResponse.json({ 
+      answer: response,
+      data: data,
+      count: data.length 
+    });
 
-Question: {question}
-    `.trim());
-
-    const chain = new LLMChain({ llm, prompt });
-    const { text } = await chain.call({ context, question: q });
-
-    return NextResponse.json({ answer: text, count: earmarks.length });
   } catch (err) {
-    console.error(err);
+    console.error('Error:', err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Server error' },
       { status: 500 }

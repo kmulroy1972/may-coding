@@ -85,6 +85,16 @@ export default function HomePage() {
         <section className="chat-panel">
           <h2 className="section-title">AI Assistant</h2>
 
+          {/* Clear button */}
+          <button
+            className="secondary-btn"
+            style={{ marginBottom: 12 }}
+            onClick={() => setMessages([])}
+            disabled={isLoading || messages.length === 0}
+          >
+            Clear
+          </button>
+
           <div className="chat-messages-panel">
             {messages.map((msg, idx) => (
               <div
