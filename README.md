@@ -1,155 +1,178 @@
-## Tech Stack
+# Mosaic - AI-Powered Earmark Analysis Platform
 
-- **Frontend Framework**: Next.js 14 (React)
-- **Database**: Supabase (PostgreSQL)
-- **Styling**: Tailwind CSS
-- **Language**: TypeScript
+Mosaic is a modern web application that leverages AI to analyze and query federal earmark data. Built with Next.js, TypeScript, and Supabase, it provides an intuitive interface for exploring earmark allocations across different agencies and years.
 
-## Environment Variables
+## 🌟 Features
 
-Create a `.env` file in your project root with the following:
+- **AI-Powered Query Interface**: Natural language processing of earmark-related questions
+- **Real-time Data Analysis**: Instant responses to complex queries about federal earmarks
+- **Modern UI/UX**: Clean, responsive design with dark/light mode support
+- **Interactive Chat**: Typewriter-style responses with markdown support
+- **Data Visualization**: Formatted display of earmark data
 
-```env
-# Supabase
-NEXT_PUBLIC_SUPABASE_URL=https://acrwslnuvtmfkqrkvtgi.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key-here
+## 📁 Project Structure
 
-# OpenAI
-NEXT_PUBLIC_OPENAI_API_KEY=your-openai-api-key-here
+```
+may-coding/
+├── src/
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── askai/
+│   │   │   │   └── route.ts          # AI query endpoint
+│   │   │   ├── clearConversation/    # Clear chat history endpoint
+│   │   │   └── search/               # Search functionality endpoint
+│   │   ├── chat/                     # Chat-related components
+│   │   ├── globals.css               # Global styles
+│   │   ├── layout.tsx               # Root layout component
+│   │   ├── page.tsx                 # Main application page
+│   │   └── favicon.ico              # Site favicon
+│   ├── components/
+│   │   ├── EarmarkChart.tsx         # Chart visualization component
+│   │   ├── SearchBar.tsx            # Search input component
+│   │   └── Filters.tsx              # Data filtering component
+│   └── lib/
+│       ├── conversatiinMemory.ts     # Chat history management
+│       ├── sampleQueries.ts          # Example query templates
+│       ├── sendMessageToAI.ts        # AI message handling
+│       ├── supabase.ts              # Database client
+│       └── useDebounce.ts           # Debounce hook for search
+├── public/                          # Static assets
+├── types/                           # TypeScript type definitions
+├── supabase/                        # Database migrations and types
+├── .next/                           # Next.js build output
+├── node_modules/                    # Project dependencies
+├── .git/                            # Git repository
+├── .eslintrc.json                   # ESLint configuration
+├── .eslintignore                    # ESLint ignore rules
+├── .gitignore                       # Git ignore rules
+├── next.config.ts                   # Next.js configuration
+├── next-env.d.ts                    # Next.js TypeScript declarations
+├── package.json                     # Project dependencies and scripts
+├── package-lock.json                # Dependency lock file
+├── postcss.config.js                # PostCSS configuration
+├── tailwind.config.js               # Tailwind CSS configuration
+└── tsconfig.json                    # TypeScript configuration
 ```
 
-**Never commit your actual keys to version control.**
+## 🔄 Recent Changes
 
-## Database Structure
+### Removed Files
+- `eslint.config.mjs` - Replaced with `.eslintrc.json`
+- `pages/api/ask.ts` - Migrated to `app/api/askai/route.ts`
+- `src/lib/api_request.ts` - Functionality merged into `sendMessageToAI.ts`
 
-The main table is `earmarks` with these columns:
+### Architecture Updates
+- Migrated from Pages Router to App Router
+- Consolidated API endpoints under `app/api/`
+- Enhanced chat functionality with dedicated components
+- Improved error handling and response formatting
 
-- `id`: number
-- `created_at`: string (timestamp)
-- `year`: number
-- `agency`: string
-- `subunit`: string | null
-- `subcommittee`: string | null
-- `account`: string | null
-- `budget_number`: string | null
-- `budget_function`: string | null
-- `recipient`: string
-- `amount`: number
-- `location`: string
-- `member`: string | null
+## 🚀 Getting Started
 
-## Key Features
+### Prerequisites
 
-1. **Real-time Data Loading**
-   - Direct connection to Supabase database
-   - Efficient data fetching and state management
+- Node.js 18+ 
+- npm or yarn
+- Supabase account and project
 
-2. **Advanced Search Functionality**
-   - Full-text search across all columns
-   - Column-specific filtering
-   - Dynamic result updates
+### Installation
 
-3. **Responsive Table Display**
-   - Clean, readable layout
-   - Sortable columns
-   - Mobile-friendly design
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/kmulroy1972/may-coding.git
+   cd may-coding
+   ```
 
-## Security
-
-- **Supabase RLS:**  
-  Make sure your Supabase project has Row Level Security (RLS) enabled and a policy that allows read access as needed.
-
-- **API Keys:**  
-  All keys are loaded from environment variables. Never commit secrets to your repo.
-
-## Environment Setup
-
-Required environment variables:
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://acrwslnuvtmfkqrkvtgi.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key-here
-```
-
-## Development
-
-1. Install dependencies:
-```bash
-npm install
-```
-
-2. Run development server:
-```bash
-npm run dev
-```
-
-3. Access the application at `http://localhost:3000`
-
-## Supabase Configuration
-
-The application requires:
-- A Supabase project
-- The `earmarks` table in the public schema
-- Appropriate RLS policies for public read access
-
-## Deployment
-
-The application can be deployed on any platform that supports Next.js, such as:
-- Vercel
-- Netlify
-- AWS
-- Digital Ocean
-
-## Future Enhancements
-
-Potential improvements:
-- Advanced filtering options
-- Data visualization features
-- Export functionality
-- Pagination for large datasets
-- Sorting capabilities
-
-## Usage
-
-1. **Install dependencies:**
+2. Install dependencies:
    ```bash
    npm install
    ```
 
-2. **Set up your `.env` file** (see above).
+3. Set up environment variables:
+   Create a `.env.local` file with:
+   ```
+   NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+   ```
 
-3. **Run the development server:**
+4. Start the development server:
    ```bash
    npm run dev
    ```
 
-4. **Open your browser to:**  
-   [http://localhost:3000](http://localhost:3000)
+## 🤖 AI Integration
 
-## How It Works
+### Architecture
 
-- **AI Search:**  
-  Enter a natural language query (e.g., "Show me education projects in California over $1 million") and the app will use OpenAI to convert it into filters.
+The AI integration consists of three main components:
 
-- **Advanced Filters:**  
-  Use the filter section to narrow results by amount, year, or location.
+1. **Frontend Interface** (`src/app/page.tsx`)
+   - Manages chat state and user interactions
+   - Handles message formatting and display
+   - Implements typewriter effect for AI responses
 
-- **Data Analysis:**  
-  Click "Analyze Data" to get an AI-generated summary of the current dataset.
+2. **API Endpoint** (`src/app/api/askai/route.ts`)
+   - Processes incoming queries
+   - Implements natural language understanding
+   - Queries Supabase database based on query intent
+   - Formats and returns responses
 
-- **Table:**  
-  View all earmarks, with real-time filtering and searching.
+3. **Message Handler** (`src/lib/sendMessageToAI.ts`)
+   - Manages communication between frontend and API
+   - Handles error states and loading indicators
 
-## Future Improvements
+### Query Processing Flow
 
-- Data visualization (charts, graphs)
-- Pagination and sorting
-- Export to CSV
-- User authentication
+1. User submits a question through the chat interface
+2. Frontend sends the query to the `/api/askai` endpoint
+3. API processes the query:
+   - Extracts key entities (agencies, years, amounts)
+   - Constructs appropriate database queries
+   - Formats results for display
+4. Response is sent back to frontend and displayed in chat
 
-## License
+### Example Queries
 
-MIT
+- "Show me all earmarks for the Department of Labor in 2022"
+- "What are the largest earmarks above $1 million?"
+- "List all earmarks for education programs"
 
-## Questions or suggestions?
+## 🛠️ Technologies
 
-Open an issue or PR!
+- **Frontend**: Next.js 14, React, TypeScript
+- **Styling**: Tailwind CSS
+- **Database**: Supabase (PostgreSQL)
+- **AI/ML**: Custom natural language processing
+- **Deployment**: Vercel (recommended)
+
+## 🔧 Configuration
+
+### Environment Variables
+
+Required environment variables:
+- `NEXT_PUBLIC_SUPABASE_URL`: Your Supabase project URL
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Your Supabase anonymous key
+
+### Database Setup
+
+1. Create a new Supabase project
+2. Run the migrations in the `supabase/migrations` directory
+3. Import your earmark data into the database
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+## 📝 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🙏 Acknowledgments
+
+- Next.js team for the amazing framework
+- Supabase for the powerful database platform
+- All contributors who have helped shape this project
