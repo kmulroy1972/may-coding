@@ -2,6 +2,8 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
+import rehypeRaw from "rehype-raw";
+import Link from "next/link";
 import { sendMessageToAI, clearConversation } from "@/lib/sendMessageToAI";
 import "./globals.css";
 
@@ -9,8 +11,8 @@ import "./globals.css";
 type Message = {
   text: string;
   sender: 'user' | 'ai';
-  typing?: boolean;               // used for optional typewriter CSS
-  id?: number;                    // unique ID for the message
+  typing?: boolean;
+  id?: number;
 };
 
 type ParsedQuery = {
@@ -23,7 +25,7 @@ type ParsedQuery = {
 };
 
 /* ── Component ─────────────────────────────────────── */
-export default function HomePage() {
+export default function EnhancedHomePage() {
   /* Chat state */
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -33,9 +35,11 @@ export default function HomePage() {
   const [parsedQuery, setParsedQuery] = useState<ParsedQuery | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   
   /* Predefined options for query builder */
   const agencies = [
+    { value: "", label: "Select Agency" },
     { value: "Labor", label: "Department of Labor" },
     { value: "Transportation", label: "Department of Transportation" },
     { value: "Health and Human Services", label: "Department of Health and Human Services" },
@@ -45,29 +49,63 @@ export default function HomePage() {
   ];
 
   const years = [
+    { value: "", label: "Select Year" },
     { value: 2022, label: "2022" },
     { value: 2023, label: "2023" },
     { value: 2024, label: "2024" }
   ];
 
   const states = [
+    { value: "", label: "Select State" },
     { value: "CA", label: "California" },
     { value: "TX", label: "Texas" },
     { value: "NY", label: "New York" },
     { value: "FL", label: "Florida" },
     { value: "PA", label: "Pennsylvania" },
     { value: "NJ", label: "New Jersey" }
-    // Add more as needed
   ];
   
   /* Sample queries to display */
   const sampleQueries = [
-    "Show me earmarks from the Department of Education in 2022",
-    "What are the largest earmarks over $1 million?",
-    "Which agencies received the most funding in 2023?",
-    "Show me earmarks for healthcare projects",
-    "Who requested the most earmarks in California?"
+    {
+      text: "Show me earmarks from the Department of Education in 2022",
+      icon: "🎓",
+      category: "Education"
+    },
+    {
+      text: "What are the largest earmarks over $1 million?",
+      icon: "💰",
+      category: "High Value"
+    },
+    {
+      text: "Which agencies received the most funding in 2023?",
+      icon: "📊",
+      category: "Analysis"
+    },
+    {
+      text: "Show me earmarks for healthcare projects",
+      icon: "🏥",
+      category: "Healthcare"
+    },
+    {
+      text: "Who requested the most earmarks in California?",
+      icon: "🌴",
+      category: "Regional"
+    },
+    {
+      text: "What are the rules for requesting earmarks?",
+      icon: "📋",
+      category: "Process"
+    }
   ];
+
+  /* Auto-resize textarea */
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+      inputRef.current.style.height = `${inputRef.current.scrollHeight}px`;
+    }
+  }, [input]);
 
   /* Scroll to latest message */
   useEffect(() => {
@@ -77,7 +115,7 @@ export default function HomePage() {
   /* Send user text to backend */
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || isLoading) return;
 
     const userMsg: Message = { 
       text: input, 
@@ -92,9 +130,9 @@ export default function HomePage() {
     setShowQueryBuilder(false);
 
     try {
-      /* set typing flag so CSS typewriter animates */
+      /* set typing flag so CSS animation shows */
       setMessages((ms) => [...ms, { 
-        text: "…", 
+        text: "", 
         sender: "ai", 
         typing: true, 
         id: Date.now() 
@@ -115,30 +153,24 @@ export default function HomePage() {
           const filters: ParsedQuery = {};
           const filterText = filterMatch[1].trim();
           
-          // Extract year
           const yearMatch = filterText.match(/Year: (\d{4})/);
           if (yearMatch) filters.year = parseInt(yearMatch[1]);
           
-          // Extract agency
           const agencyMatch = filterText.match(/Agency: Department of ([^,]+)/);
           if (agencyMatch) filters.agency = agencyMatch[1].trim();
           
-          // Extract location
           const locationMatch = filterText.match(/Location: ([^,]+)/);
           if (locationMatch) filters.location = locationMatch[1].trim();
           
-          // Extract member
           const memberMatch = filterText.match(/Member: ([^,]+)/);
           if (memberMatch) filters.member = memberMatch[1].trim();
           
-          // Extract amount filters
           const minAmountMatch = filterText.match(/Minimum Amount: \$([0-9,]+)/);
           if (minAmountMatch) filters.minAmount = parseInt(minAmountMatch[1].replace(/,/g, ''));
           
           const maxAmountMatch = filterText.match(/Maximum Amount: \$([0-9,]+)/);
           if (maxAmountMatch) filters.maxAmount = parseInt(maxAmountMatch[1].replace(/,/g, ''));
           
-          // Set parsed query if we found any filters
           if (Object.keys(filters).length > 0) {
             setParsedQuery(filters);
           }
@@ -152,7 +184,7 @@ export default function HomePage() {
     } catch {
       setMessages((ms) => [
         ...ms.slice(0, -1),
-        { text: "Error fetching AI response.", sender: "ai", id: Date.now() },
+        { text: "Sorry, I'm having trouble connecting right now. Please try again.", sender: "ai", id: Date.now() },
       ]);
     } finally {
       setIsLoading(false);
@@ -162,8 +194,9 @@ export default function HomePage() {
   /* Handle clicking on a sample query */
   function handleSampleQuery(query: string) {
     setInput(query);
-    // Auto-submit the query
+    // Focus the input and auto-submit
     setTimeout(() => {
+      inputRef.current?.focus();
       formRef.current?.requestSubmit();
     }, 100);
   }
@@ -171,7 +204,7 @@ export default function HomePage() {
   /* Build and send query from guided query builder */
   function buildAndSendQuery(year?: number | null, agency?: string | null, state?: string | null) {
     if (!year && !agency && !state) {
-      return; // Don't send empty queries
+      return;
     }
     
     let queryText = "Show me earmarks";
@@ -191,10 +224,10 @@ export default function HomePage() {
     
     setInput(queryText);
     
-    // Auto-submit after a brief delay to let the user see what's being sent
     setTimeout(() => {
+      inputRef.current?.focus();
       formRef.current?.requestSubmit();
-    }, 500);
+    }, 300);
   }
 
   /* Handle feedback for responses */
@@ -204,7 +237,6 @@ export default function HomePage() {
       [messageId]: type
     }));
     
-    // You could send this feedback to your backend
     console.log(`Message ${messageId} received ${type} feedback`);
   }
 
@@ -219,259 +251,546 @@ export default function HomePage() {
   /* Clear all messages and reset conversation */
   function handleClearChat() {
     setMessages([]);
-    clearConversation(); // Clear conversation memory
+    clearConversation();
     setFeedbackGiven({});
     setShowQueryBuilder(true);
     setParsedQuery(null);
+    setInput("");
   }
 
-  /* ── Dark‑mode toggle ───────────────────────────── */
+  /* Dark‑mode toggle */
   function toggleTheme() {
     const root = document.documentElement;
     root.dataset.theme = root.dataset.theme === "dark" ? "" : "dark";
   }
 
-  /* Format earmark data for better display */
-  function formatEarmarkText(text: string) {
-    // Check if this is earmark data by looking for common patterns
-    if (!text.includes('records found') && !text.includes('SAMPLE RECORDS:')) {
-      return <p>{text}</p>;
-    }
-    
-    // Enhance dollar amounts with formatting
+  /* Format AI responses for better readability */
+  function formatAIResponse(text: string) {
+    // Just use ReactMarkdown directly for simple, reliable formatting
+    return (
+      <div className="message-content">
+        <ReactMarkdown rehypePlugins={[rehypeRaw]}>{text}</ReactMarkdown>
+      </div>
+    );
+  }
+
+  /* Format earmark-specific data sections */
+  function formatEarmarkData(text: string) {
     const formattedText = text.replace(/\$[\d,.]+ (?:m(?:illion)?)?/g, (match) => {
       const isLarge = match.includes('million') || 
                      parseInt(match.replace(/[$,]/g, '')) >= 1000000;
       
-      return `<span class="dollar-amount ${isLarge ? 'large-amount' : ''}">${match}</span>`;
+      return `<span class="amount ${isLarge ? 'large' : ''}">${match}</span>`;
     });
     
-    // Split into sections
     const sections = formattedText.split('\n\n');
     
     return (
       <div className="earmark-results">
         {sections.map((section, i) => {
-          // Format the sample records section
           if (section.includes("SAMPLE RECORDS:")) {
+            const recordsContent = section.replace("SAMPLE RECORDS:", "").trim();
+            console.log("DEBUG - Raw records content:", recordsContent);
+            
+            const projects = recordsContent.split('\n\n').filter(line => line.trim());
+            console.log("DEBUG - Split projects:", projects);
+            
             return (
-              <div key={i} className="earmark-cards">
-                <h3 className="section-subtitle">Sample Records</h3>
-                {section.replace("SAMPLE RECORDS:", "").trim().split('\n').map((record, j) => (
-                  <div key={j} className="earmark-card" 
-                       dangerouslySetInnerHTML={{ __html: record.trim() }} />
-                ))}
+              <div key={i} className="records-section">
+                <h4>📋 Projects</h4>
+                <div className="project-list">
+                  {projects.map((project, index) => {
+                    // Parse project data - each project is all on one line now
+                    console.log("DEBUG - Raw project:", project);
+                    
+                    // Split by the pattern "Field Name: Value"
+                    const parts = project.split(/(?=[A-Z][A-Za-z\s]*:)/);
+                    const title = parts[0].trim();
+                    
+                    const details: Record<string, string> = {};
+                    parts.slice(1).forEach(part => {
+                      const colonIndex = part.indexOf(':');
+                      if (colonIndex > 0) {
+                        const key = part.substring(0, colonIndex).trim();
+                        const value = part.substring(colonIndex + 1).trim();
+                        details[key.toLowerCase()] = value;
+                      }
+                    });
+                    
+                    console.log("DEBUG - Project title:", title);
+                    console.log("DEBUG - Project details:", details);
+
+                    return (
+                      <div key={index} className="project-card">
+                        <div className="project-header">
+                          <div className="project-number">{index + 1}</div>
+                          <h3 className="project-title">{title}</h3>
+                        </div>
+                        <div className="project-details">
+                          {details['fy year'] && (
+                            <div className="project-detail">
+                              <span className="detail-label">FY Year</span>
+                              <span className="detail-value">{details['fy year']}</span>
+                            </div>
+                          )}
+                          {details.amount && (
+                            <div className="project-detail">
+                              <span className="detail-label">Amount</span>
+                              <span className="detail-value amount-value">{details.amount}</span>
+                            </div>
+                          )}
+                          {details.location && (
+                            <div className="project-detail">
+                              <span className="detail-label">Location</span>
+                              <span className="detail-value">{details.location}</span>
+                            </div>
+                          )}
+                          {details.subcommittee && (
+                            <div className="project-detail">
+                              <span className="detail-label">Subcommittee</span>
+                              <span className="detail-value">{details.subcommittee}</span>
+                            </div>
+                          )}
+                          {details.department && (
+                            <div className="project-detail">
+                              <span className="detail-label">Department</span>
+                              <span className="detail-value">{details.department}</span>
+                            </div>
+                          )}
+                          {details.agency && (
+                            <div className="project-detail">
+                              <span className="detail-label">Agency</span>
+                              <span className="detail-value">{details.agency}</span>
+                            </div>
+                          )}
+                          {details.account && (
+                            <div className="project-detail">
+                              <span className="detail-label">Account</span>
+                              <span className="detail-value">{details.account}</span>
+                            </div>
+                          )}
+                          {details.member && (
+                            <div className="project-detail full-width">
+                              <span className="detail-label">Member</span>
+                              <span className="detail-value member-value">{details.member}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             );
           } 
-          // Format the statistics section
           else if (section.includes("STATISTICS:")) {
             return (
-              <div key={i} className="statistics-panel">
-                <h3 className="section-subtitle">Statistics</h3>
-                <ul className="statistics-list">
-                  {section.replace("STATISTICS:", "").trim().split('\n').map((stat, j) => (
-                    <li key={j} className="statistic-item"
-                        dangerouslySetInnerHTML={{ __html: stat.trim().replace('-', '') }} />
-                  ))}
-                </ul>
+              <div key={i} className="stats-section">
+                <h4>📊 Key Statistics</h4>
+                <div className="stats-grid">
+                  {section.replace("STATISTICS:", "").trim().split('\n').map((stat, j) => {
+                    const cleanStat = stat.trim().replace(/^-\s*/, '');
+                    return (
+                      <div key={j} className="stat-card"
+                          dangerouslySetInnerHTML={{ __html: cleanStat }} />
+                    );
+                  })}
+                </div>
               </div>
             );
           }
-          // General informational text (not earmark records)
           else if (section.includes("records found") || section.includes("DATABASE CONTEXT:")) {
-            return <div key={i} className="info-text" dangerouslySetInnerHTML={{ __html: section }} />;
+            return <div key={i} className="info-banner" dangerouslySetInnerHTML={{ __html: section }} />;
           }
-          // Default formatting for other sections
-          return <p key={i} dangerouslySetInnerHTML={{ __html: section }} />;
+          else if (section.includes("DOCUMENT SEARCH")) {
+            return (
+              <div key={i} className="document-section">
+                <h4>📄 Document Sources</h4>
+                <div className="document-content" dangerouslySetInnerHTML={{ __html: section }} />
+              </div>
+            );
+          }
+          return formatTextSection(section, i);
         })}
       </div>
     );
   }
 
+  /* Format general AI responses with proper paragraphs and structure */
+  function formatGeneralResponse(text: string) {
+    // Split into paragraphs
+    const paragraphs = text.split('\n\n').filter(p => p.trim().length > 0);
+    
+    return (
+      <div className="response-content">
+        {paragraphs.map((paragraph, i) => {
+          const trimmed = paragraph.trim();
+          
+          // Check if it's a heading (starts with specific patterns)
+          if (isHeading(trimmed)) {
+            return formatHeading(trimmed, i);
+          }
+          
+          // Check if it's a list
+          if (isList(trimmed)) {
+            return formatList(trimmed, i);
+          }
+          
+          // Check if it's a quote or callout
+          if (isCallout(trimmed)) {
+            return formatCallout(trimmed, i);
+          }
+          
+          // Regular paragraph
+          return (
+            <div key={i} className="response-paragraph">
+              <ReactMarkdown rehypePlugins={[rehypeRaw]}>{trimmed}</ReactMarkdown>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  /* Helper functions for response formatting */
+  function isHeading(text: string): boolean {
+    return /^(#{1,6}\s|[A-Z][^.!?]*:$|^\*\*[^*]+\*\*$)/.test(text) ||
+           text.includes('INSTRUCTIONS:') ||
+           text.includes('KEY POINTS:') ||
+           text.includes('SUMMARY:') ||
+           text.includes('FINDINGS:');
+  }
+
+  function isList(text: string): boolean {
+    const lines = text.split('\n');
+    return lines.length > 1 && lines.some(line => 
+      /^\s*[-*+•]\s/.test(line) || /^\s*\d+\.\s/.test(line)
+    );
+  }
+
+  function isCallout(text: string): boolean {
+    return text.startsWith('**Note:') || 
+           text.startsWith('**Important:') ||
+           text.startsWith('**Remember:') ||
+           text.includes('💡') ||
+           text.includes('⚠️') ||
+           text.includes('ℹ️');
+  }
+
+  function formatHeading(text: string, key: number) {
+    const cleanText = text.replace(/^#+\s*/, '').replace(/^\*\*|\*\*$/g, '');
+    return (
+      <div key={key} className="response-heading">
+        <h4>{cleanText}</h4>
+      </div>
+    );
+  }
+
+  function formatList(text: string, key: number) {
+    const lines = text.split('\n').filter(line => line.trim());
+    const isNumbered = /^\s*\d+\./.test(lines[0]);
+    
+    return (
+      <div key={key} className="response-list">
+        {isNumbered ? (
+          <ol>
+            {lines.map((line, i) => (
+              <li key={i}>
+                <ReactMarkdown rehypePlugins={[rehypeRaw]}>{line.replace(/^\s*\d+\.\s*/, '')}</ReactMarkdown>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <ul>
+            {lines.map((line, i) => (
+              <li key={i}>
+                <ReactMarkdown rehypePlugins={[rehypeRaw]}>{line.replace(/^\s*[-*+•]\s*/, '')}</ReactMarkdown>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  }
+
+  function formatCallout(text: string, key: number) {
+    let type = 'info';
+    let icon = 'ℹ️';
+    
+    if (text.includes('**Important:') || text.includes('⚠️')) {
+      type = 'warning';
+      icon = '⚠️';
+    } else if (text.includes('**Note:') || text.includes('💡')) {
+      type = 'tip';
+      icon = '💡';
+    }
+    
+    return (
+      <div key={key} className={`response-callout ${type}`}>
+        <div className="callout-icon">{icon}</div>
+        <div className="callout-content">
+          <ReactMarkdown rehypePlugins={[rehypeRaw]}>{text}</ReactMarkdown>
+        </div>
+      </div>
+    );
+  }
+
+  function formatTextSection(text: string, key: number) {
+    // Handle dollar amounts in any text section
+    const withFormattedAmounts = text.replace(/\$[\d,.]+ (?:m(?:illion)?)?/g, (match) => {
+      const isLarge = match.includes('million') || 
+                     parseInt(match.replace(/[$,]/g, '')) >= 1000000;
+      
+      return `<span class="amount ${isLarge ? 'large' : ''}">${match}</span>`;
+    });
+    
+    return (
+      <div key={key} className="response-paragraph" 
+           dangerouslySetInnerHTML={{ __html: withFormattedAmounts }} />
+    );
+  }
+
   /* ── Render ─────────────────────────────────────── */
   return (
-    <div className="main-bg">
-      <header className="main-header">
-        <span className="main-title">Mosaic</span>
-        <div className="header-controls">
-          <button onClick={handleClearChat} className="clear-btn" disabled={messages.length === 0}>
-            New Chat
-          </button>
-          <button onClick={toggleTheme} className="theme-btn">
-            ☾ / ☀︎
-          </button>
+    <div className="app-container">
+      {/* Header */}
+      <header className="app-header">
+        <div className="header-content">
+          <Link href="/" className="app-logo">
+            <div className="logo-icon">M</div>
+            <span className="logo-text">Mosaic</span>
+          </Link>
+          
+          <div className="header-actions">
+            <Link href="/admin" className="header-btn">
+              📚 Admin
+            </Link>
+            <button 
+              onClick={handleClearChat} 
+              className="header-btn" 
+              disabled={messages.length === 0}
+            >
+              ✨ New Chat
+            </button>
+            <button onClick={toggleTheme} className="header-btn">
+              🌙 Theme
+            </button>
+          </div>
         </div>
       </header>
 
-      <main className="main-flex">
-        <section className="chat-panel">
-          <h2 className="section-title">AI Earmark Assistant</h2>
-          
-          {/* Query Understanding Display */}
-          {parsedQuery && Object.keys(parsedQuery).length > 0 && (
-            <div className="query-understanding">
-              <h4>Query understood as:</h4>
-              <ul className="parsed-filters">
-                {parsedQuery.year && <li>Year: {parsedQuery.year}</li>}
-                {parsedQuery.agency && <li>Agency: Department of {parsedQuery.agency}</li>}
-                {parsedQuery.location && <li>Location: {parsedQuery.location}</li>}
-                {parsedQuery.member && <li>Member: {parsedQuery.member}</li>}
-                {parsedQuery.minAmount && <li>Minimum: ${parsedQuery.minAmount.toLocaleString()}</li>}
-                {parsedQuery.maxAmount && <li>Maximum: ${parsedQuery.maxAmount.toLocaleString()}</li>}
-              </ul>
+      {/* Main Content */}
+      <main className="main-content">
+        <div className="content-wrapper">
+          {/* Hero Section */}
+          {messages.length === 0 && (
+            <div className="hero-section">
+              <div className="hero-badge">
+                <span>✨</span>
+                AI-Powered Federal Earmark Analysis
+              </div>
+              <h1 className="hero-title text-balance">
+                Discover Federal Earmarks with Natural Language
+              </h1>
+              <p className="hero-subtitle">
+                Ask questions about federal funding, analyze earmark data, and explore government spending patterns using our AI-powered search interface.
+              </p>
             </div>
           )}
 
-          <div className="chat-messages-panel">
-            {messages.length === 0 ? (
-              <div className="welcome-message">
-                <div className="welcome-icon">🔍</div>
-                <h3>Welcome to Mosaic</h3>
-                <p>Ask questions about federal earmarks and funding data or use the guided query builder below.</p>
+          {/* Chat Interface */}
+          <div className="chat-container">
+            <div className="chat-panel">
+              <div className="chat-header">
+                <h2 className="chat-title">💬 AI Earmark Assistant</h2>
               </div>
-            ) : (
-              messages.map((msg, idx) => (
-                <div
-                  key={idx}
-                  className={`chat-bubble ${msg.sender} ${
-                    msg.sender === "ai" && !msg.typing ? "markdown" : ""
-                  } ${msg.sender === "ai" && idx === messages.length - 1 && msg.typing ? "typewriter" : ""}`}
-                >
-                  <div className={`${msg.sender}-icon`}>
-                    {msg.sender === 'user' ? '👤' : '🤖'}
+
+              {/* Query Understanding Display */}
+              {parsedQuery && Object.keys(parsedQuery).length > 0 && (
+                <div className="query-understanding">
+                  <h4>🎯 Query understood as:</h4>
+                  <div className="parsed-filters">
+                    {parsedQuery.year && <span className="filter-tag">📅 {parsedQuery.year}</span>}
+                    {parsedQuery.agency && <span className="filter-tag">🏛️ Department of {parsedQuery.agency}</span>}
+                    {parsedQuery.location && <span className="filter-tag">📍 {parsedQuery.location}</span>}
+                    {parsedQuery.member && <span className="filter-tag">👤 {parsedQuery.member}</span>}
+                    {parsedQuery.minAmount && <span className="filter-tag">💰 Min: ${parsedQuery.minAmount.toLocaleString()}</span>}
+                    {parsedQuery.maxAmount && <span className="filter-tag">💰 Max: ${parsedQuery.maxAmount.toLocaleString()}</span>}
                   </div>
-                  <div className="message-content">
-                    {msg.sender === "ai" && !msg.typing ? (
-                      <>
-                        {formatEarmarkText(msg.text)}
-                        {msg.id && (
-                          <div className="feedback-buttons">
-                            {!feedbackGiven[msg.id] ? (
-                              <>
-                                <button 
-                                  onClick={() => handleFeedback(msg.id!, 'up')}
-                                  className="feedback-btn"
-                                  aria-label="Helpful"
-                                >
-                                  👍
-                                </button>
-                                <button 
-                                  onClick={() => handleFeedback(msg.id!, 'down')}
-                                  className="feedback-btn"
-                                  aria-label="Not helpful"
-                                >
-                                  👎
-                                </button>
-                              </>
-                            ) : (
-                              <div className="feedback-thanks">
-                                {feedbackGiven[msg.id] === 'up' ? 'Thanks for the feedback! 👍' : 'Thanks for the feedback! 👎'}
+                </div>
+              )}
+
+              <div className="chat-messages">
+                {messages.length === 0 ? (
+                  <div className="welcome-card">
+                    <div className="welcome-icon">🔍</div>
+                    <h3 className="welcome-title">Welcome to Mosaic</h3>
+                    <p className="welcome-description">
+                      Ask questions about federal earmarks and funding data. I can help you analyze spending patterns, 
+                      find specific allocations, and understand the earmark process.
+                    </p>
+                  </div>
+                ) : (
+                  messages.map((msg, idx) => (
+                    <div key={idx} className={`message-bubble ${msg.sender}`}>
+                      <div className="message-avatar">
+                        {msg.sender === 'user' ? '👤' : '🤖'}
+                      </div>
+                      <div className="message-content">
+                        {msg.sender === "ai" && !msg.typing ? (
+                          <>
+                            {formatAIResponse(msg.text)}
+                            {msg.id && (
+                              <div className="message-feedback">
+                                {!feedbackGiven[msg.id] ? (
+                                  <div className="feedback-buttons">
+                                    <button 
+                                      onClick={() => handleFeedback(msg.id!, 'up')}
+                                      className="feedback-btn like"
+                                      aria-label="Helpful"
+                                    >
+                                      👍
+                                    </button>
+                                    <button 
+                                      onClick={() => handleFeedback(msg.id!, 'down')}
+                                      className="feedback-btn dislike"
+                                      aria-label="Not helpful"
+                                    >
+                                      👎
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="feedback-thanks">
+                                    Thanks for the feedback! {feedbackGiven[msg.id] === 'up' ? '👍' : '👎'}
+                                  </div>
+                                )}
                               </div>
                             )}
+                          </>
+                        ) : msg.typing ? (
+                          <div className="loading-dots">
+                            <div className="loading-dot"></div>
+                            <div className="loading-dot"></div>
+                            <div className="loading-dot"></div>
+                          </div>
+                        ) : (
+                          <div className="message-text">
+                            <ReactMarkdown rehypePlugins={[rehypeRaw]}>
+                              {msg.text}
+                            </ReactMarkdown>
                           </div>
                         )}
+                      </div>
+                    </div>
+                  ))
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Query Builder - show only when no conversation started */}
+              {messages.length === 0 && showQueryBuilder && (
+                <div className="query-builder">
+                  <h3 className="builder-title">
+                    🛠️ Quick Query Builder
+                  </h3>
+                  <div className="builder-controls">
+                    <div className="control-group">
+                      <label className="control-label">Year</label>
+                      <select 
+                        className="control-select"
+                        onChange={(e) => buildAndSendQuery(e.target.value ? parseInt(e.target.value) : null, null, null)}
+                      >
+                        {years.map(year => (
+                          <option key={year.value} value={year.value}>{year.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    <div className="control-group">
+                      <label className="control-label">Agency</label>
+                      <select 
+                        className="control-select"
+                        onChange={(e) => buildAndSendQuery(null, e.target.value || null, null)}
+                      >
+                        {agencies.map(agency => (
+                          <option key={agency.value} value={agency.value}>{agency.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    <div className="control-group">
+                      <label className="control-label">State</label>
+                      <select 
+                        className="control-select"
+                        onChange={(e) => buildAndSendQuery(null, null, e.target.value || null)}
+                      >
+                        {states.map(state => (
+                          <option key={state.value} value={state.value}>{state.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Sample Queries Section */}
+              {messages.length === 0 && (
+                <div className="sample-queries">
+                  <h3 className="sample-queries-title">💡 Try asking:</h3>
+                  <div className="sample-queries-grid">
+                    {sampleQueries.map((query, index) => (
+                      <div 
+                        key={index}
+                        className="sample-query-card"
+                        onClick={() => handleSampleQuery(query.text)}
+                      >
+                        <div className="query-icon">{query.icon}</div>
+                        <p className="sample-query-text">{query.text}</p>
+                        <div className="query-category">{query.category}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Chat Input */}
+              <div className="chat-input-container">
+                <form ref={formRef} className="chat-input-form" onSubmit={handleSend}>
+                  <textarea
+                    ref={inputRef}
+                    className="chat-input"
+                    placeholder="Ask me anything about federal earmarks... (Shift+Enter for new line)"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleInputKeyDown}
+                    rows={1}
+                  />
+                  <button
+                    className="chat-send-btn"
+                    type="submit"
+                    disabled={isLoading || !input.trim()}
+                  >
+                    {isLoading ? (
+                      <>
+                        <div className="loading-dots">
+                          <div className="loading-dot"></div>
+                          <div className="loading-dot"></div>
+                          <div className="loading-dot"></div>
+                        </div>
+                        Thinking...
                       </>
                     ) : (
-                      <ReactMarkdown
-                        components={{ table: (props) => <table {...props} className="chat-table" /> }}
-                      >
-                        {msg.text}
-                      </ReactMarkdown>
+                      <>
+                        Send
+                        <span>🚀</span>
+                      </>
                     )}
-                  </div>
-                </div>
-              ))
-            )}
-
-            {isLoading && (
-              <div className="chat-bubble ai">
-                <div className="ai-icon">🤖</div>
-                <div className="message-content">
-                  <div className="thinking-dots">
-                    <span></span><span></span><span></span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div ref={messagesEndRef} />
-          </div>
-
-          {/* Guided Query Builder - show only when no conversation started */}
-          {messages.length === 0 && showQueryBuilder && (
-            <div className="guided-query-builder">
-              <h3 className="builder-title">Build A Query</h3>
-              <div className="query-controls">
-                <div className="control-group">
-                  <label>Year</label>
-                  <select onChange={(e) => buildAndSendQuery(e.target.value ? parseInt(e.target.value) : null, null, null)}>
-                    <option value="">Select Year</option>
-                    {years.map(year => (
-                      <option key={year.value} value={year.value}>{year.label}</option>
-                    ))}
-                  </select>
-                </div>
-                
-                <div className="control-group">
-                  <label>Agency</label>
-                  <select onChange={(e) => buildAndSendQuery(null, e.target.value || null, null)}>
-                    <option value="">Select Agency</option>
-                    {agencies.map(agency => (
-                      <option key={agency.value} value={agency.value}>{agency.label}</option>
-                    ))}
-                  </select>
-                </div>
-                
-                <div className="control-group">
-                  <label>State</label>
-                  <select onChange={(e) => buildAndSendQuery(null, null, e.target.value || null)}>
-                    <option value="">Select State</option>
-                    {states.map(state => (
-                      <option key={state.value} value={state.value}>{state.label} ({state.value})</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Sample Queries Section - Show only when no messages exist */}
-          {messages.length === 0 && (
-            <div className="sample-queries">
-              <p className="sample-query-heading">Try asking:</p>
-              <div className="sample-query-grid">
-                {sampleQueries.map((query, index) => (
-                  <button 
-                    key={index}
-                    className="sample-query-btn"
-                    onClick={() => handleSampleQuery(query)}
-                  >
-                    "{query}"
                   </button>
-                ))}
+                </form>
               </div>
             </div>
-          )}
-
-          <form ref={formRef} className="chat-input-form" onSubmit={handleSend}>
-            <textarea
-              className="chat-input"
-              placeholder="Type your message. Shift+Enter for newline."
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleInputKeyDown}
-              rows={2}
-            />
-            <button
-              className="chat-send-btn"
-              type="submit"
-              disabled={isLoading}
-            >
-              Send
-            </button>
-          </form>
-        </section>
+          </div>
+        </div>
       </main>
     </div>
   );

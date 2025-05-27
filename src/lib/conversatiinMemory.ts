@@ -13,7 +13,7 @@ export interface Conversation {
 const MAX_MESSAGES = 10;
 
 // In-memory store (in a real app, you might use localStorage or a database)
-let conversations: Record<string, Conversation> = {};
+const conversations: Record<string, Conversation> = {};
 
 /**
  * Adds a message to the conversation history

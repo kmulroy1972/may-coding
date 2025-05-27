@@ -5,12 +5,18 @@ import { supabase } from '@/lib/supabase';
 import type { Earmark } from 'types/database.types';
 // Fix import path
 import { addMessage, getConversationContext } from '@/lib/conversationMemory';
+import OpenAI from 'openai';
 
 /* ───────────────────────────── OpenAI ───────────────────────────── */
 const llm = new ChatOpenAI({
   modelName: 'gpt-4-turbo', // Using the latest available model for better capabilities
   openAIApiKey: process.env.OPENAI_API_KEY,
   temperature: 0.7 // Add some creativity but not too much
+});
+
+// Initialize OpenAI client for file search
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
 });
 
 /* ────────────────────── helpers & regex section ─────────────────── */
@@ -51,9 +57,15 @@ function dollars(raw: string): number {
 }
 
 function extractEntities(question: string) {
-  const memberMatch = question.match(
-    /\b(?:Sen(?:ator)?|Rep(?:resentative)?|Congress(?:man|woman)?)\.?\s+([\w'-]+)/i
+  // Try multiple patterns to extract member names
+  let memberMatch = question.match(
+    /\b(?:Sen(?:ator)?|Rep(?:resentative)?|Congress(?:man|woman)?)\.?\s+([\w'-]+(?:\s+[\w'-]+)?)\b/i
   );
+  
+  // If that doesn't work, try just looking for common surnames after these titles
+  if (!memberMatch || memberMatch[1].includes('secured') || memberMatch[1].includes('requested')) {
+    memberMatch = question.match(/\b(?:Sen(?:ator)?|Rep(?:resentative)?)\.?\s+([\w'-]+)\b/i);
+  }
   const yearMatch   = question.match(/\b(?:FY\s*)?(20\d{2})\b/i);
   const agencyMatch = question.match(
     /\b(?:U\.?S\.?\s+)?(?:Department|Dept\.?)\s+of\s+([\w\s&]+?)(?:\s+in\s+|\s+for\s+|\s*$)/i
@@ -89,7 +101,7 @@ function extractEntities(question: string) {
   // Get location code if we have a match
   const locationCode = locationText ? getStateCode(locationText) : null;
 
-  const member = memberMatch ? memberMatch[1] : null;
+  const member = memberMatch ? memberMatch[1].trim() : null;
   const year   = yearMatch   ? parseInt(yearMatch[1], 10) : null;
   const agency = agencyMatch ? agencyMatch[1].trim() : null;
 
@@ -106,11 +118,16 @@ function extractEntities(question: string) {
   cleaned     = strip(locationMatch?.[0]);
 
   const stop = new Set(['projects','earmarks','funding','funded','department',
-                        'earmark','of','the','and','in','for','on']);
+                        'earmark','of','the','and','in','for','on','senator','representative',
+                        'secured','requested','congress','congressman','congresswoman']);
+  
+  // Also exclude the member name from keywords if we found one
+  const memberName = member ? member.toLowerCase() : '';
+  
   const keywords = cleaned
     .split(/\s+/)
     .map(w => w.toLowerCase().trim())
-    .filter(w => w.length > 3 && !stop.has(w));
+    .filter(w => w.length > 3 && !stop.has(w) && w !== memberName);
 
   // Handle common agency abbreviations and aliases
   const agencyAliases: Record<string, string> = {
@@ -161,9 +178,11 @@ async function queryEarmarks(f: ReturnType<typeof extractEntities>): Promise<Ear
   
   let q = supabase.from('earmarks').select('*');
 
-  // Fix member search to handle both Senator and Representative formats
+  // Fix member search to handle the actual database format where multiple members are in one field
   if (f.member) {
-    q = q.or(`member.ilike.%Senator ${f.member}%,member.ilike.%Representative ${f.member}%`);
+    // Handle different name formats: "Menendez" should match "Senator Robert Menendez" 
+    const memberLastName = f.member.split(' ').pop(); // Get last word as surname
+    q = q.ilike('member', `%${memberLastName}%`);
   }
 
   if (f.year)       q = q.eq('year', f.year);
@@ -209,6 +228,9 @@ async function queryEarmarks(f: ReturnType<typeof extractEntities>): Promise<Ear
     .order('amount', { ascending: false })
     .limit(1000);
   
+  console.log('DEBUG: Generated query data length:', data?.length);
+  console.log('DEBUG: Query error:', error);
+  
   if (error) {
     console.error('Supabase query error:', error);
     throw new Error(error.message);
@@ -219,30 +241,184 @@ async function queryEarmarks(f: ReturnType<typeof extractEntities>): Promise<Ear
 }
 
 /**
- * Retrieves relevant PDF content based on the user's question
- * This is a placeholder function - implement with your PDF storage solution
+ * Use AI to interpret natural language queries into database filters
  */
-async function getRelevantPdfContent(question: string): Promise<string> {
-  // This is where you would add your PDF content retrieval logic
-  // For now, we'll return a placeholder with key information about earmarks
-  
-  // In a real implementation, you might:
-  // 1. Use vector embeddings to find relevant PDF chunks
-  // 2. Extract text from specific PDFs based on keywords
-  // 3. Use a document store like Pinecone or a Supabase vector extension
-  
-  return `
-ADDITIONAL REFERENCE INFORMATION FROM PDF DOCUMENTS:
+async function interpretQueryWithAI(question: string): Promise<ReturnType<typeof extractEntities> | null> {
+  try {
+    const interpretationPrompt = `
+You are a query interpreter for a federal earmarks database. Convert this natural language question into database search parameters.
 
-Community Project Funding (CPF) / Earmarks Process:
-- House rules call them Community Project Funding (CPF)
-- Senate labels them Congressionally Directed Spending (CDS)
-- FY 2025-2026 Request window: Mar 25 - Apr 15 2025 (House)
-- Key rule tweaks: 15-project cap per Member, Non-profits ineligible for HUD-EDI account
-- Defense, MilCon-VA, and THUD accounts restored after FY 2024 pause
+The database has these fields:
+- member: Congressional member names (stored as "Senator X" or "Rep. Y")
+- year: Fiscal year (2022, 2023, 2024)
+- agency: Department names (stored as "Department of X")
+- amount: Dollar amounts
+- location: State codes
+- recipient: Project recipient and description
 
-For future implementation, replace this with dynamic PDF content retrieval.
+Question: "${question}"
+
+Extract ONLY the specific search parameters. Ignore action words like "secured", "requested", "list", "show", "total", etc.
+
+Respond with a JSON object with these fields (use null for empty):
+{
+  "member": "lastname only",
+  "year": number or null,
+  "agency": "department name without 'Department of'" or null,
+  "minAmount": number or null,
+  "maxAmount": number or null,
+  "location": "state code" or null,
+  "keywords": []
+}
+
+Examples:
+- "Senator Smith's earmarks" → {"member": "Smith", "year": null, "agency": null, "minAmount": null, "maxAmount": null, "location": null, "keywords": []}
+- "Transportation earmarks in 2023" → {"member": null, "year": 2023, "agency": "Transportation", "minAmount": null, "maxAmount": null, "location": null, "keywords": []}
 `;
+
+    const result = await llm.invoke(interpretationPrompt);
+    const response = result.content.toString().trim();
+    
+    // Try to parse the JSON response
+    const jsonMatch = response.match(/\{[^}]+\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      console.log('AI interpretation successful:', parsed);
+      return parsed;
+    }
+    
+    console.log('AI interpretation failed to return valid JSON');
+    return null;
+    
+  } catch (error) {
+    console.error('AI interpretation error:', error);
+    return null;
+  }
+}
+
+/**
+ * Retrieves relevant document content using OpenAI's File Search
+ */
+async function getRelevantDocumentContent(question: string): Promise<{
+  content: string;
+  citations: Array<{filename: string; fileId: string}>;
+}> {
+  const vectorStoreId = process.env.OPENAI_VECTOR_STORE_ID;
+  
+  if (!vectorStoreId) {
+    console.warn('OPENAI_VECTOR_STORE_ID not configured, skipping document search');
+    return {
+      content: `
+DOCUMENT SEARCH: No vector store configured.
+
+To enable document search:
+1. Run: npm run setup-vector-store
+2. Run: npm run upload-docs
+3. Add OPENAI_VECTOR_STORE_ID to your .env.local file
+
+Using fallback earmark information:
+- Community Project Funding (CPF) in House, Congressionally Directed Spending (CDS) in Senate
+- FY 2025-2026 Request window: Mar 25 - Apr 15 2025 (House)
+- 15-project cap per Member, Non-profits ineligible for HUD-EDI account
+- Defense, MilCon-VA, and THUD accounts restored after FY 2024 pause
+`,
+      citations: []
+    };
+  }
+
+  try {
+    console.log('🔍 Searching documents for:', question);
+    
+    // Use OpenAI's Responses API with file search
+    const response = await openai.responses.create({
+      model: "gpt-4o-mini", // Efficient model for document search
+      input: `Find information relevant to this earmark/funding question: ${question}`,
+      tools: [{
+        type: "file_search",
+        vector_store_ids: [vectorStoreId],
+        max_num_results: 5 // Limit results for performance
+      }],
+      include: ["file_search_call.results"] // Include search results in response
+    });
+
+    // Extract content and citations from response
+    let documentContent = '';
+    const citations: Array<{filename: string; fileId: string}> = [];
+    
+    for (const output of response.output) {
+      if (output.type === 'message' && output.content) {
+        for (const contentItem of output.content) {
+          if (contentItem.type === 'output_text') {
+            documentContent += contentItem.text;
+            
+            // Extract citations from annotations
+            if (contentItem.annotations) {
+              for (const annotation of contentItem.annotations) {
+                if (annotation.type === 'file_citation') {
+                  // Handle file citation annotation
+                  const fileCitation = annotation as {
+                    type: 'file_citation';
+                    filename?: string;
+                    file_id?: string;
+                  };
+                  citations.push({
+                    filename: fileCitation.filename || 'Unknown file',
+                    fileId: fileCitation.file_id || 'unknown'
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Format the document content
+    const formattedContent = documentContent ? `
+DOCUMENT SEARCH RESULTS:
+
+${documentContent}
+
+${citations.length > 0 ? `
+SOURCES:
+${citations.map(c => `- ${c.filename}`).join('\n')}
+` : ''}
+` : `
+DOCUMENT SEARCH: No relevant documents found for this query.
+
+Consider uploading more documents related to:
+- Appropriations committee guidelines
+- Earmark process documentation
+- Agency-specific funding rules
+- Legislative procedures
+`;
+
+    console.log(`📄 Found ${citations.length} document citations`);
+    
+    return {
+      content: formattedContent,
+      citations
+    };
+
+  } catch (error) {
+    console.error('Document search error:', error);
+    
+    return {
+      content: `
+DOCUMENT SEARCH ERROR: Unable to search documents at this time.
+
+Error: ${error instanceof Error ? error.message : 'Unknown error'}
+
+Using fallback earmark information:
+- Community Project Funding (CPF) in House, Congressionally Directed Spending (CDS) in Senate
+- Members submit requests during specific windows (typically March-May)
+- Each Member limited in number of requests (House: 15 per Member)
+- No for-profit recipients allowed
+- Requires documented community support and public disclosure
+`,
+      citations: []
+    };
+  }
 }
 
 /* Function to build context for OpenAI */
@@ -251,7 +427,10 @@ async function buildOpenAIContext(
   filters: ReturnType<typeof extractEntities>, 
   earmarks: Earmark[],
   conversationContext: string = ''
-): Promise<string> {
+): Promise<{
+  context: string;
+  citations: Array<{filename: string; fileId: string}>;
+}> {
   // Create a summary of the filters applied
   const filterSummary = [
     filters.year ? `Year: ${filters.year}` : null,
@@ -263,12 +442,23 @@ async function buildOpenAIContext(
     filters.keywords.length ? `Keywords: ${filters.keywords.join(', ')}` : null
   ].filter((item): item is string => item !== null);  // Type guard to ensure string[]
   
-  // Show sample records (up to 5)
-  const sampleRecords = earmarks.slice(0, 5).map((e, i) => 
-    `${i+1}. ${e.year}: ${e.recipient} received ${fmt(e.amount)} from ${e.agency}` +
-    (e.location ? ` for a project in ${e.location}` : '') +
-    (e.member ? ` (requested by ${e.member})` : '')
-  ).join('\n');
+  // Show sample records (more for "list all" queries, fewer for others)
+  const isListAllQuery = question.toLowerCase().includes('all') || question.toLowerCase().includes('list');
+  const recordsToShow = isListAllQuery ? Math.min(earmarks.length, 50) : 5;
+  const sampleRecords = earmarks.slice(0, recordsToShow).map((e, i) => 
+    `**${i+1}. ${e.recipient}**
+
+**FY Year:** ${e.year}  
+**Amount:** ${fmt(e.amount)}  
+**Location:** ${e.location || 'N/A'}  
+**Subcommittee:** ${e.subcommittee || 'N/A'}  
+**Department:** ${e.agency}  
+**Agency:** ${e.subunit || 'N/A'}  
+**Account:** ${e.account || 'N/A'}  
+**Member:** ${e.member || 'N/A'}  
+
+---`
+  ).join('\n\n');
 
   // Build statistics if we have results
   let stats = '';
@@ -285,63 +475,26 @@ STATISTICS:
 - Smallest earmark: ${fmt(min)}
 - Largest earmark: ${fmt(max)}
 - Most common agency: ${getMostCommon(earmarks.map(e => e.agency))}
-- Most common recipient type: ${getMostCommon(earmarks.map(e => e.budget_function))}`;
+- Most common recipient type: ${getMostCommon(earmarks.map(e => e.budget_function).filter((f): f is string => Boolean(f)))}`;
   }
 
-  // Get relevant PDF content
-  const pdfContent = await getRelevantPdfContent(question);
+  // Get relevant document content using file search
+  const documentSearch = await getRelevantDocumentContent(question);
 
-  // Add the comprehensive earmark reference information
+  // Streamlined context - only include relevant details
   const earmarkReference = `
-SYSTEM CONTEXT: You are Mosaic's AI assistant, specialized in analyzing federal earmark (Community Project Funding) data from FY2022-2024. You have access to a Supabase database containing detailed information about Congressional earmarks. Your role is to help users understand this data through natural language queries, providing insightful, accurate responses about earmark funding patterns, trends, and specific projects.
+SYSTEM CONTEXT: You are Mosaic's AI assistant for analyzing federal earmark data from FY2022-2024.
 
-DATABASE SCHEMA AND FIELD INTERPRETATIONS:
----------------------------------------------
+KEY CONTEXT:
+- Earmarks are Congressional funding directed to specific recipients/projects
+- Data covers fiscal years 2022-2024 (federal fiscal year = Oct 1 - Sep 30)
+- Member field may contain multiple congresspeople per earmark
+- Amounts are in nominal dollars
 
-Table: earmarks
-  - year (int4): Fiscal Year of the appropriation. Users may refer to this as "FY2023", "in 2023", or "last year's funding".
-  
-  - agency (text): The federal department receiving the funds. This is always stored with the full name "Department of X" (e.g., "Department of Transportation") although users might abbreviate as "DOT" or just say "Transportation".
-  
-  - subunit (text): The specific agency component receiving funds (e.g., "Federal Highway Administration", "Office of Economic Development"). Users often use acronyms like "FHWA" or "Corps of Engineers".
-  
-  - subcommittee (text): The Appropriations subcommittee with jurisdiction. Often referenced by acronyms like "THUD" (Transportation-HUD) or "LHHS" (Labor-HHS-Education).
-  
-  - account (text): The specific Treasury budget account where funds are drawn from. Users might say "RDP account" or mention specific account names.
-  
-  - budget_number (text): Treasury Symbol identifier (rarely directly queried).
-  
-  - budget_function (text): OMB functional classification such as "Education, Training, Employment and Social Services" or "Transportation". Users will refer to these as categories or sectors.
-  
-  - recipient (text): The named entity receiving the earmark funds (e.g., "City of Madison, WI" or "Rutgers University"). This is often what users are most interested in finding.
-  
-  - amount (int4): Dollar amount of the earmark in nominal dollars (stored as integers without commas). Users may ask for "largest earmarks", "projects over $1 million", or "total funding for X".
-  
-  - location (text): Two-letter state/territory postal code (e.g., "CA", "NY", "PR"). Users will typically refer to states by their full names like "California" or "New Jersey".
-  
-  - member (text): The Congressional sponsor who requested the earmark, stored as "Sen. [Name]" or "Rep. [Name] (XX-##)" where XX is state code and ## is district number.
-
-EARMARK DOMAIN KNOWLEDGE:
---------------------------
-1. Definition: Earmarks (officially "Community Project Funding" in the House or "Congressionally Directed Spending" in the Senate) are line-items in appropriations acts that direct funds to specifically named recipients or locations, bypassing the normal competitive grant process.
-
-2. Recent History:
-   - 2007-2010: Peak usage (~12,000 earmarks annually)
-   - 2011-2020: Complete ban under House & Senate rules
-   - 2021-present: Reinstated with new transparency rules and guardrails
-
-3. Current Process:
-   - Members submit requests to Appropriations Committee during a specific window (typically March-May)
-   - Each Member is limited in the number of requests (House: 15 per Member)
-   - Requests require documented community support and public disclosure
-   - No for-profit recipients allowed
-   - Members must certify no financial interest
-   - Total earmarks are capped at approximately 1% of discretionary spending
-
-${pdfContent}
+${documentSearch.content}
 `;
 
-  return `
+  const context = `
 You are an AI assistant for a federal earmarks database called Mosaic. You help users query and understand earmark allocations.
 
 ${earmarkReference}
@@ -357,19 +510,33 @@ DATABASE CONTEXT:
 ${earmarks.length > 0 
   ? `SAMPLE RECORDS:
 ${sampleRecords}
+
 ${stats}`
   : 'No matching records found.'}
 
 INSTRUCTIONS:
-1. Respond in a conversational, helpful tone
-2. If records were found, summarize key insights about the earmarks
-3. If no records were found, suggest alternative queries or explain possible reasons why
-4. Always be accurate with numbers and figures
-5. Provide context about earmarks when relevant (what they are, how they work)
-6. If the user is asking a follow-up question, refer to previous context in the conversation
-7. When showing dollar amounts, use proper formatting (e.g., $1.5 million or $500,000)
-8. If referring to states, include both the state name and postal code for clarity
+1. **Be direct and concise** - provide exactly what the user asked for
+2. **For listing queries**: Start your response with exactly "SAMPLE RECORDS:" then present the raw data without any markdown formatting
+3. **For summary queries**: Provide totals and key statistics without excessive commentary
+4. **Format dollar amounts clearly** (e.g., $1.5 million or $500,000)
+5. **Show ALL available records** when user asks for "all" or "list"
+6. **Avoid unnecessary analysis** unless specifically requested
+7. **No promotional language** or suggestions for next steps unless asked
+8. **If no records found**: Simply state the fact and suggest alternatives briefly
+
+**CRITICAL**: When showing project lists, respond with exactly what is provided in the SAMPLE RECORDS section with no changes, additions, or reformatting.
+
+**Response Style:**
+- Direct, factual, data-focused
+- Minimal commentary unless analysis is specifically requested
+- Clean formatting with clear organization
+- No marketing language or excessive enthusiasm
 `;
+
+  return {
+    context,
+    citations: documentSearch.citations
+  };
 }
 
 /* Helper function to find most common value in an array */
@@ -440,7 +607,7 @@ export async function POST(req: NextRequest) {
 
       // If we have data from the direct query, let's use that
       if (directData && directData.length > 0) {
-        const context = await buildOpenAIContext(
+        const contextResult = await buildOpenAIContext(
           question, 
           { 
             year: 2022, 
@@ -456,11 +623,11 @@ export async function POST(req: NextRequest) {
         );
 
         // Use the LLM directly
-        const prompt = PromptTemplate.fromTemplate(`
+        const prompt = await PromptTemplate.fromTemplate(`
 {context}
 
 Provide a conversational response about the earmark data. Make it informative but friendly and accessible to someone who may not be familiar with government funding terminology.
-`).format({ context });
+`).format({ context: contextResult.context });
 
         const result = await llm.invoke(prompt);
         
@@ -471,14 +638,34 @@ Provide a conversational response about the earmark data. Make it informative bu
           answer: result.content, 
           data: directData.slice(0, 10),
           count: directData.length,
+          citations: contextResult.citations,
           sessionId: sessionId
         });
       }
     }
 
-    // Extract entities and query the database
-    const filters = extractEntities(question);
-    console.log('Extracted filters:', filters);
+    // First, try an AI-powered query interpretation approach
+    const aiInterpretedQuery = await interpretQueryWithAI(question);
+    console.log('AI Interpreted Query:', aiInterpretedQuery);
+    
+    // Fallback to entity extraction if AI interpretation fails
+    const filters = aiInterpretedQuery || extractEntities(question);
+    console.log('Final filters used:', filters);
+    console.log('DEBUG: Original question:', question);
+    console.log('DEBUG: Extracted member:', filters.member);
+    
+    // DEBUG: If looking for Menendez specifically, let's see what member names exist
+    if (question.toLowerCase().includes('menendez')) {
+      console.log('DEBUG: Looking for Menendez, checking database...');
+      const { data: testData, error: testError } = await supabase
+        .from('earmarks')
+        .select('member')
+        .ilike('member', '%menendez%')
+        .limit(5);
+      
+      console.log('DEBUG: Direct Menendez search results:', testData);
+      if (testError) console.log('DEBUG: Direct search error:', testError);
+    }
     
     // Log exact query values
     console.log('Final query parameters:');
@@ -534,7 +721,13 @@ Provide a conversational response about the earmark data. Make it informative bu
         if (!yearError && yearData && yearData.length > 0) {
           console.log(`Found ${yearData.length} records for year ${filters.year}`);
           
-          const answer = `I couldn't find earmarks matching all your criteria, but I found ${yearData.length} earmarks from ${filters.year}. Would you like to see those instead?`;
+          // If we were looking for a specific member, mention that specifically
+          let answer = '';
+          if (filters.member) {
+            answer = `I couldn't find any earmarks for ${filters.member} in ${filters.year}. However, I found ${yearData.length} other earmarks from ${filters.year}. Would you like to see those, or try a different year for ${filters.member}?`;
+          } else {
+            answer = `I couldn't find earmarks matching all your criteria, but I found ${yearData.length} earmarks from ${filters.year}. Would you like to see those instead?`;
+          }
           
           // Add the AI's response to conversation history
           addMessage(sessionId, 'assistant', answer);
@@ -543,7 +736,7 @@ Provide a conversational response about the earmark data. Make it informative bu
             answer: answer,
             data: yearData,
             count: yearData.length,
-            suggestion: `Show me earmarks from ${filters.year}`,
+            suggestion: filters.member ? `Show me earmarks for ${filters.member}` : `Show me earmarks from ${filters.year}`,
             sessionId: sessionId
           });
         }
@@ -578,16 +771,16 @@ Provide a conversational response about the earmark data. Make it informative bu
     }
 
     // Build context for OpenAI
-    const context = await buildOpenAIContext(question, filters, earmarks, conversationContext);
+    const contextResult = await buildOpenAIContext(question, filters, earmarks, conversationContext);
     
     // Create a prompt template and invoke the model directly
     const promptTemplate = PromptTemplate.fromTemplate(`
 {context}
 
-Provide a conversational response about the earmark data. Make it informative but friendly and accessible to someone who may not be familiar with government funding terminology.
+Provide a direct, concise response with the requested data. Focus on facts and figures without unnecessary commentary or analysis. Present information in a clear, organized format.
 `);
 
-    const formattedPrompt = await promptTemplate.format({ context });
+    const formattedPrompt = await promptTemplate.format({ context: contextResult.context });
     const result = await llm.invoke(formattedPrompt);
     
     // Add the AI's response to conversation history
@@ -597,6 +790,7 @@ Provide a conversational response about the earmark data. Make it informative bu
       answer: result.content, 
       data: earmarks.slice(0, 10),
       count: earmarks.length,
+      citations: contextResult.citations,
       sessionId: sessionId
     });
 

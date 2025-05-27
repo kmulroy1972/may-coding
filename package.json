@@ -2,22 +2,27 @@
   "name": "may-coding",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "setup-vector-store": "node scripts/setup-vector-store.js",
+    "upload-docs": "node scripts/upload-documents.js"
   },
   "dependencies": {
     "@langchain/openai": "^0.5.10",
     "@supabase/supabase-js": "^2.49.4",
+    "dotenv": "^16.5.0",
     "langchain": "^0.3.24",
     "next": "15.3.1",
     "openai": "^4.96.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
-    "recharts": "^2.15.3"
+    "recharts": "^2.15.3",
+    "rehype-raw": "^7.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^8.57.0",
