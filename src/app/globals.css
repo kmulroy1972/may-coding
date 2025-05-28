@@ -1073,21 +1073,15 @@ body, html {
 }
 
 /* Basic Markdown Element Styles */
+.message-content p {
+  margin: var(--space-sm) 0;
+  line-height: 1.6;
+  white-space: pre-line;          /* ensures \n shows if a <p> slips through */
+}
+
 .message-content strong {
   font-weight: 700;
   color: var(--text-primary);
-}
-
-.message-content h1,
-.message-content h2,
-.message-content h3,
-.message-content h4,
-.message-content h5,
-.message-content h6 {
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: var(--space-md) 0 var(--space-sm) 0;
-  line-height: 1.3;
 }
 
 .message-content hr {
@@ -1096,11 +1090,6 @@ body, html {
   background: var(--border-secondary);
   margin: var(--space-lg) 0;
   opacity: 0.6;
-}
-
-.message-content p {
-  margin: var(--space-sm) 0;
-  line-height: 1.6;
 }
 
 /* Enhanced Message Content for Project Lists */
@@ -1472,4 +1461,27 @@ body, html {
 .amount-value,
 .member-value {
   display: none;
+}
+
+/* --- Markdown improvements --- */
+.message-content p {
+  margin: var(--space-sm) 0;
+  line-height: 1.6;
+  white-space: pre-line;
+}
+.message-content strong {
+  font-weight: 700;
+}
+.message-content hr {
+  border: none;
+  height: 1px;
+  background: var(--border-secondary);
+  margin: var(--space-lg) 0;
+  opacity: 0.6;
+}
+
+/* --- Record separator for multi‑result replies --- */
+.record-item + .record-item {
+  border-top: 1px solid var(--border-primary);
+  padding-top: var(--space-md);
 }

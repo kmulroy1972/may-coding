@@ -3,9 +3,37 @@
 import React, { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
+import remarkBreaks from "remark-breaks";
+import remarkGfm from "remark-gfm";
 import Link from "next/link";
 import { sendMessageToAI, clearConversation } from "@/lib/sendMessageToAI";
 import "./globals.css";
+
+/* ---------- Markdown helpers ---------- */
+const LABELS = [
+  "FY Year", "Amount", "Location",
+  "Subcommittee", "Department", "Agency",
+  "Account", "Member"
+];
+
+/** Wrap each record in a `.record-card` div and bold the labels */
+function prettifyRecords(raw: string): string {
+  // Split on numbered lines like "1. Project title"
+  const records = raw.split(/\n(?=\\d+\\.\\s)/).filter(Boolean);
+
+  return records
+    .map(r => {
+      // bold every known label followed by a colon
+      LABELS.forEach(l => {
+        const re = new RegExp(`(^|\\n)(${l}:)`, "g");
+        r = r.replace(re, `$1<strong>$2</strong>`);
+      });
+      // bold the very first line (the project title)
+      r = r.replace(/^\\d+\\.(.*)$/m, match => `<p class="record-title">${match.trim()}</p>`);
+      return `<div class="record-card">${r.trim()}</div>`;
+    })
+    .join("\\n");           // keep original spacing between records
+}
 
 /* ── Types ─────────────────────────────────────────── */
 type Message = {
@@ -265,13 +293,8 @@ export default function EnhancedHomePage() {
   }
 
   /* Format AI responses for better readability */
-  function formatAIResponse(text: string) {
-    // Just use ReactMarkdown directly for simple, reliable formatting
-    return (
-      <div className="message-content">
-        <ReactMarkdown rehypePlugins={[rehypeRaw]}>{text}</ReactMarkdown>
-      </div>
-    );
+  function formatAIResponse(text: string): string {
+    return prettifyRecords(text ?? "");
   }
 
   /* Format earmark-specific data sections */
@@ -444,7 +467,10 @@ export default function EnhancedHomePage() {
           // Regular paragraph
           return (
             <div key={i} className="response-paragraph">
-              <ReactMarkdown rehypePlugins={[rehypeRaw]}>{trimmed}</ReactMarkdown>
+              <ReactMarkdown
+                remarkPlugins={[remarkBreaks, remarkGfm]}
+                rehypePlugins={[rehypeRaw]}
+              >{trimmed}</ReactMarkdown>
             </div>
           );
         })}
@@ -496,7 +522,10 @@ export default function EnhancedHomePage() {
           <ol>
             {lines.map((line, i) => (
               <li key={i}>
-                <ReactMarkdown rehypePlugins={[rehypeRaw]}>{line.replace(/^\s*\d+\.\s*/, '')}</ReactMarkdown>
+                <ReactMarkdown
+                  remarkPlugins={[remarkBreaks, remarkGfm]}
+                  rehypePlugins={[rehypeRaw]}
+                >{line.replace(/^\s*\d+\.\s*/, '')}</ReactMarkdown>
               </li>
             ))}
           </ol>
@@ -504,7 +533,10 @@ export default function EnhancedHomePage() {
           <ul>
             {lines.map((line, i) => (
               <li key={i}>
-                <ReactMarkdown rehypePlugins={[rehypeRaw]}>{line.replace(/^\s*[-*+•]\s*/, '')}</ReactMarkdown>
+                <ReactMarkdown
+                  remarkPlugins={[remarkBreaks, remarkGfm]}
+                  rehypePlugins={[rehypeRaw]}
+                >{line.replace(/^\s*[-*+•]\s*/, '')}</ReactMarkdown>
               </li>
             ))}
           </ul>
@@ -529,7 +561,10 @@ export default function EnhancedHomePage() {
       <div key={key} className={`response-callout ${type}`}>
         <div className="callout-icon">{icon}</div>
         <div className="callout-content">
-          <ReactMarkdown rehypePlugins={[rehypeRaw]}>{text}</ReactMarkdown>
+          <ReactMarkdown
+            remarkPlugins={[remarkBreaks, remarkGfm]}
+            rehypePlugins={[rehypeRaw]}
+          >{text}</ReactMarkdown>
         </div>
       </div>
     );
@@ -639,7 +674,12 @@ export default function EnhancedHomePage() {
                       <div className="message-content">
                         {msg.sender === "ai" && !msg.typing ? (
                           <>
-                            {formatAIResponse(msg.text)}
+                            <ReactMarkdown
+                              remarkPlugins={[remarkBreaks, remarkGfm]}
+                              rehypePlugins={[rehypeRaw]}
+                            >
+                              {formatAIResponse(msg.text)}
+                            </ReactMarkdown>
                             {msg.id && (
                               <div className="message-feedback">
                                 {!feedbackGiven[msg.id] ? (
@@ -675,7 +715,10 @@ export default function EnhancedHomePage() {
                           </div>
                         ) : (
                           <div className="message-text">
-                            <ReactMarkdown rehypePlugins={[rehypeRaw]}>
+                            <ReactMarkdown
+                              remarkPlugins={[remarkBreaks, remarkGfm]}
+                              rehypePlugins={[rehypeRaw]}
+                            >
                               {msg.text}
                             </ReactMarkdown>
                           </div>
