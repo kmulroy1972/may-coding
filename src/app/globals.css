@@ -1,7 +1,7 @@
 /* Enhanced Mosaic Design System */
 
-/* Import modern fonts */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Import Inter font */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 /* CSS Reset & Base */
 * {
@@ -22,33 +22,33 @@ body, html {
 
 /* Design Tokens */
 :root {
-  /* Colors */
-  --bg-primary: #f8fafc;
+  /* Mosaic Brand Colors */
+  --bg-primary: #F5F7FA;
   --bg-secondary: #ffffff;
-  --bg-tertiary: #f1f5f9;
-  --bg-overlay: rgba(15, 23, 42, 0.05);
+  --bg-tertiary: #F5F7FA;
+  --bg-overlay: rgba(36, 59, 85, 0.05);
   
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-tertiary: #64748b;
+  --text-primary: #243B55;
+  --text-secondary: #4F5D75;
+  --text-tertiary: #4F5D75;
   --text-inverse: #ffffff;
   
-  --accent-primary: #3b82f6;
-  --accent-primary-hover: #2563eb;
-  --accent-secondary: #10b981;
-  --accent-tertiary: #f59e0b;
+  --accent-primary: #243B55;
+  --accent-primary-hover: #1a2d42;
+  --accent-secondary: #3AAFA9;
+  --accent-tertiary: #3AAFA9;
   --accent-danger: #ef4444;
   
   --border-primary: #e2e8f0;
   --border-secondary: #cbd5e1;
-  --border-focus: #3b82f6;
+  --border-focus: #3AAFA9;
   
-  /* Gradients */
-  --gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  --gradient-secondary: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-  --gradient-accent: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-  --gradient-warm: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
-  --gradient-cool: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+  /* Mosaic Gradients */
+  --gradient-primary: linear-gradient(135deg, #243B55 0%, #3AAFA9 100%);
+  --gradient-secondary: linear-gradient(135deg, #3AAFA9 0%, #243B55 100%);
+  --gradient-accent: linear-gradient(135deg, #3AAFA9 0%, #243B55 100%);
+  --gradient-warm: linear-gradient(135deg, #3AAFA9 0%, #243B55 100%);
+  --gradient-cool: linear-gradient(135deg, #F5F7FA 0%, #3AAFA9 100%);
   
   /* Shadows */
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
@@ -82,19 +82,19 @@ body, html {
 
 /* Dark Theme */
 [data-theme="dark"] {
-  --bg-primary: #0f172a;
-  --bg-secondary: #1e293b;
-  --bg-tertiary: #334155;
+  --bg-primary: #243B55;
+  --bg-secondary: #1a2d42;
+  --bg-tertiary: #243B55;
   --bg-overlay: rgba(248, 250, 252, 0.05);
   
-  --text-primary: #f8fafc;
-  --text-secondary: #cbd5e1;
-  --text-tertiary: #94a3b8;
+  --text-primary: #F5F7FA;
+  --text-secondary: #4F5D75;
+  --text-tertiary: #4F5D75;
   
   --border-primary: #334155;
   --border-secondary: #475569;
   
-  --gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --gradient-primary: linear-gradient(135deg, #243B55 0%, #3AAFA9 100%);
 }
 
 /* Layout Components */
@@ -125,7 +125,7 @@ body, html {
   position: sticky;
   top: 0;
   z-index: 50;
-  background: rgba(248, 250, 252, 0.8);
+  background: rgba(245, 247, 250, 0.8);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border-primary);
   padding: var(--space-md) var(--space-xl);
@@ -133,7 +133,7 @@ body, html {
 }
 
 [data-theme="dark"] .app-header {
-  background: rgba(15, 23, 42, 0.8);
+  background: rgba(36, 59, 85, 0.8);
 }
 
 .header-content {
@@ -155,6 +155,12 @@ body, html {
 
 .app-logo:hover {
   transform: translateY(-1px);
+}
+
+.logo-image {
+  height: 50px;
+  width: auto;
+  transition: all var(--transition-fast);
 }
 
 .logo-icon {

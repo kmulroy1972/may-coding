@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 300" style="background-color: transparent;">
+  <!-- Mosaic squares pattern -->
+  <g transform="translate(70, 75)">
+    <!-- Row 1 -->
+    <rect x="0" y="0" width="35" height="35" fill="#3AAFA9"/>
+    <rect x="40" y="0" width="35" height="35" fill="#3AAFA9"/>
+    <rect x="80" y="0" width="35" height="35" fill="#243B55"/>
+    
+    <!-- Row 2 -->
+    <rect x="0" y="40" width="35" height="35" fill="#3AAFA9"/>
+    <rect x="40" y="40" width="35" height="35" fill="#3AAFA9"/>
+    <rect x="80" y="40" width="35" height="35" fill="#243B55"/>
+    
+    <!-- Row 3 -->
+    <rect x="0" y="80" width="35" height="35" fill="#3AAFA9"/>
+    <rect x="40" y="80" width="35" height="35" fill="#243B55"/>
+    <rect x="80" y="80" width="35" height="35" fill="#243B55"/>
+    
+    <!-- White diagonal line -->
+    <rect x="30" y="30" width="60" height="10" fill="white" transform="rotate(45 60 60)"/>
+  </g>
+  
+  <!-- MOSAIC text -->
+  <text x="300" y="175" font-family="Inter, sans-serif" font-size="100" font-weight="bold" fill="#243B55">MOSAIC</text>
+</svg>

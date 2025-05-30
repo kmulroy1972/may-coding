@@ -315,7 +315,8 @@ export default function EnhancedHomePage() {
             const recordsContent = section.replace("SAMPLE RECORDS:", "").trim();
             console.log("DEBUG - Raw records content:", recordsContent);
             
-            const projects = recordsContent.split('\n\n').filter(line => line.trim());
+            // Split projects by numbered lines (1., 2., etc.) or by double newlines
+            const projects = recordsContent.split(/(?=\d+\.\s)|(?:\n\n)/).filter(line => line.trim());
             console.log("DEBUG - Split projects:", projects);
             
             return (
@@ -323,19 +324,31 @@ export default function EnhancedHomePage() {
                 <h4>📋 Projects</h4>
                 <div className="project-list">
                   {projects.map((project, index) => {
-                    // Parse project data - each project is all on one line now
                     console.log("DEBUG - Raw project:", project);
                     
-                    // Split by the pattern "Field Name: Value"
-                    const parts = project.split(/(?=[A-Z][A-Za-z\s]*:)/);
-                    const title = parts[0].trim();
+                    // Extract title - first line or numbered line
+                    const lines = project.trim().split('\n');
+                    let title = lines[0].trim();
                     
+                    // Remove number prefix if present
+                    title = title.replace(/^\d+\.\s*/, '');
+                    
+                    // Parse field-value pairs from all lines
                     const details: Record<string, string> = {};
-                    parts.slice(1).forEach(part => {
-                      const colonIndex = part.indexOf(':');
+                    
+                    lines.forEach(line => {
+                      const trimmedLine = line.trim();
+                      
+                      // Skip empty lines and the title line
+                      if (!trimmedLine || trimmedLine === title) return;
+                      
+                      // Look for "Field: Value" pattern
+                      const colonIndex = trimmedLine.indexOf(':');
                       if (colonIndex > 0) {
-                        const key = part.substring(0, colonIndex).trim();
-                        const value = part.substring(colonIndex + 1).trim();
+                        const key = trimmedLine.substring(0, colonIndex).trim();
+                        const value = trimmedLine.substring(colonIndex + 1).trim();
+                        
+                        // Convert key to lowercase for consistent lookup
                         details[key.toLowerCase()] = value;
                       }
                     });
@@ -592,8 +605,7 @@ export default function EnhancedHomePage() {
       <header className="app-header">
         <div className="header-content">
           <Link href="/" className="app-logo">
-            <div className="logo-icon">M</div>
-            <span className="logo-text">Mosaic</span>
+            <img src="/mosaic-logo.svg" alt="MOSAIC" className="logo-image" width="200" height="60" />
           </Link>
           
           <div className="header-actions">
