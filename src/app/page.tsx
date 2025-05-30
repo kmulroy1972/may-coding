@@ -16,23 +16,51 @@ const LABELS = [
   "Account", "Member"
 ];
 
-/** Wrap each record in a `.record-card` div and bold the labels */
-function prettifyRecords(raw: string): string {
-  // Split on numbered lines like "1. Project title"
-  const records = raw.split(/\n(?=\\d+\\.\\s)/).filter(Boolean);
+/* ——————————————————————————————————————————
+   Converts AI record text → Markdown list
+   • Splits raw text into individual records (blank‑line separated)
+   • Formats each record:
+     – First line ➜ bold project title
+     – Standard labels (FY Year, Amount, etc.) ➜ bold
+   • Returns an **ordered list** so your CSS card styles apply
+—————————————————————————————————————————— */
+function formatAIResponse(raw: string): string {
+  if (!raw) return '';
 
-  return records
-    .map(r => {
-      // bold every known label followed by a colon
-      LABELS.forEach(l => {
-        const re = new RegExp(`(^|\\n)(${l}:)`, "g");
-        r = r.replace(re, `$1<strong>$2</strong>`);
-      });
-      // bold the very first line (the project title)
-      r = r.replace(/^\\d+\\.(.*)$/m, match => `<p class="record-title">${match.trim()}</p>`);
-      return `<div class="record-card">${r.trim()}</div>`;
-    })
-    .join("\\n");           // keep original spacing between records
+  const labelPattern =
+    /^(FY Year|Amount|Location|Subcommittee|Department|Agency|Account|Member):/i;
+
+  // 1) Split on blank lines ⇒ separate records
+  const records = raw
+    .trim()
+    .split(/\n\s*\n/)      // one or more blank lines
+    .filter(Boolean);
+
+  // 2) Format each record
+  const formattedRecords = records.map(rec => {
+    const lines = rec.split('\n').map((ln, idx) => {
+      const trimmed = ln.trim();
+      if (!trimmed) return '';
+
+      // First line = project title
+      if (idx === 0) return `**${trimmed}**`;
+
+      // Bold recognised labels
+      if (labelPattern.test(trimmed)) {
+        return trimmed.replace(labelPattern, match => `**${match}**`);
+      }
+
+      return trimmed;
+    });
+
+    // Collapse stray blank lines inside a record
+    return lines.filter((l, i, arr) => l || arr[i - 1]).join('\n');
+  });
+
+  // 3) Build an ordered‑list Markdown string
+  return formattedRecords
+    .map((rec, idx) => `${idx + 1}. ${rec}`)
+    .join('\n\n');
 }
 
 /* ── Types ─────────────────────────────────────────── */
@@ -292,10 +320,6 @@ export default function EnhancedHomePage() {
     root.dataset.theme = root.dataset.theme === "dark" ? "" : "dark";
   }
 
-  /* Format AI responses for better readability */
-  function formatAIResponse(text: string): string {
-    return prettifyRecords(text ?? "");
-  }
 
   /* Format earmark-specific data sections */
   function formatEarmarkData(text: string) {
@@ -686,12 +710,22 @@ export default function EnhancedHomePage() {
                       <div className="message-content">
                         {msg.sender === "ai" && !msg.typing ? (
                           <>
-                            <ReactMarkdown
-                              remarkPlugins={[remarkBreaks, remarkGfm]}
-                              rehypePlugins={[rehypeRaw]}
-                            >
-                              {formatAIResponse(msg.text)}
-                            </ReactMarkdown>
+                            <div className="message-text">
+                              <ReactMarkdown
+                                remarkPlugins={[remarkBreaks, remarkGfm]}
+                                rehypePlugins={[rehypeRaw]}
+                                components={{
+                                  p: ({node, ...props}) => <p {...props} />,
+                                  strong: ({node, ...props}) => <strong {...props} />,
+                                  em: ({node, ...props}) => <em {...props} />,
+                                  ol: ({node, ...props}) => <ol {...props} />,
+                                  ul: ({node, ...props}) => <ul {...props} />,
+                                  li: ({node, ...props}) => <li {...props} />
+                                }}
+                              >
+                                {formatAIResponse(msg.text)}
+                              </ReactMarkdown>
+                            </div>
                             {msg.id && (
                               <div className="message-feedback">
                                 {!feedbackGiven[msg.id] ? (
@@ -730,6 +764,14 @@ export default function EnhancedHomePage() {
                             <ReactMarkdown
                               remarkPlugins={[remarkBreaks, remarkGfm]}
                               rehypePlugins={[rehypeRaw]}
+                              components={{
+                                p: ({node, ...props}) => <p {...props} />,
+                                strong: ({node, ...props}) => <strong {...props} />,
+                                em: ({node, ...props}) => <em {...props} />,
+                                ol: ({node, ...props}) => <ol {...props} />,
+                                ul: ({node, ...props}) => <ul {...props} />,
+                                li: ({node, ...props}) => <li {...props} />
+                              }}
                             >
                               {msg.text}
                             </ReactMarkdown>

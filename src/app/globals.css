@@ -1469,11 +1469,55 @@ body, html {
   display: none;
 }
 
+.message-content ol {
+  list-style: none;
+  padding: 0;
+  counter-reset: ai-item;
+}
+
+.message-content ol > li {
+  position: relative;
+  margin: var(--space-md) 0;
+  padding: var(--space-md) var(--space-lg) var(--space-md) calc(var(--space-lg) + 2.25rem);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  line-height: 1.55;
+  transition: box-shadow var(--transition-fast), transform var(--transition-fast);
+}
+
+.message-content ol > li:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.message-content ol > li::before {
+  counter-increment: ai-item;
+  content: counter(ai-item) ".";
+  position: absolute;
+  left: var(--space-lg);
+  top: 50%;
+  transform: translateY(-50%);
+  font-weight: 700;
+  color: var(--accent-primary);
+}
+
 /* --- Markdown improvements --- */
 .message-content p {
   margin: var(--space-sm) 0;
   line-height: 1.6;
   white-space: pre-line;
+}
+/* Tighter spacing for paragraphs inside list‑style record cards */
+.message-content ol > li p {
+  margin: 0 0 0.4rem 0;   /* smaller gap between lines */
+  line-height: 1.45;
+  white-space: pre-line;  /* keep manual line breaks */
+}
+
+.message-content ol > li p:last-child {
+  margin-bottom: 0;       /* no extra space after the last line */
 }
 .message-content strong {
   font-weight: 700;
@@ -1490,4 +1534,168 @@ body, html {
 .record-item + .record-item {
   border-top: 1px solid var(--border-primary);
   padding-top: var(--space-md);
+}
+/* ───────────────────────────────────────────────────────────────
+   Mosaic UI enhancements – 2025‑05‑30
+   Refines card visuals, typography, grids, and interactive cues
+   ────────────────────────────────────────────────────────────── */
+
+   :root {
+    --color-bg-card: #ffffff;
+    --color-bg-card-dark: #1f2937;
+    --color-border-card: #e5e7eb;
+    --color-border-card-dark: #374151;
+    --color-accent: #0e7490;           /* Teal */
+    --color-accent-light: #e0f2fe;     /* Light‑teal tint */
+    --color-amount-large: #be123c;     /* Crimson for large $ */
+    --color-filter-bg: #f1f5f9;        /* Soft‑gray tag bg  */
+    --color-filter-text: #0f172a;      /* Tag text */
+  }
+  
+  [data-theme="dark"] {
+    --color-bg-card: #1f2937;
+    --color-border-card: #374151;
+    --color-filter-bg: #334155;
+    --color-filter-text: #f8fafc;
+  }
+  
+  /* General card wrapper ---------------------------------------------------- */
+  .record-card,
+  .project-card,
+  .welcome-card,
+  .sample-query-card {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-card);
+    border-radius: 0.75rem;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.25rem;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .04);
+  }
+  
+  /* Titles ------------------------------------------------------------------ */
+  .record-title,
+  .project-title {
+    font-weight: 600;
+    font-size: 1.1rem;
+    line-height: 1.4;
+    margin: 0 0 .5rem;
+  }
+  
+  /* Dollar amounts ---------------------------------------------------------- */
+  .amount {
+    font-weight: 600;
+  }
+  .amount.large {
+    color: var(--color-amount-large);
+  }
+  
+  /* Project header ---------------------------------------------------------- */
+  .project-header {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    margin-bottom: .75rem;
+  }
+  
+  .project-number {
+    background: var(--color-accent-light);
+    color: var(--color-accent);
+    border-radius: 9999px;
+    width: 2rem;
+    height: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+  }
+  
+  /* Detail grid ------------------------------------------------------------- */
+  .project-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: .5rem 1rem;
+  }
+  .project-detail { display: flex; flex-direction: column; }
+  
+  .detail-label {
+    font-weight: 600;
+    font-size: .82rem;
+    text-transform: uppercase;
+    color: var(--color-filter-text);
+    margin-bottom: .2rem;
+  }
+  .detail-value {
+    font-size: .95rem;
+    line-height: 1.35;
+  }
+  .full-width { grid-column: 1 / -1; }
+  
+  /* Query filter tags ------------------------------------------------------- */
+  .filter-tag {
+    background: var(--color-filter-bg);
+    color: var(--color-filter-text);
+    padding: .35rem .65rem;
+    border-radius: .5rem;
+    font-size: .8rem;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+  }
+  
+  /* Statistics grid --------------------------------------------------------- */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: .75rem;
+  }
+  .stat-card {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-card);
+    border-radius: .5rem;
+    padding: .75rem 1rem;
+  }
+  
+  /* Callouts ---------------------------------------------------------------- */
+  .response-callout {
+    border-left: 4px solid var(--color-accent);
+    padding: .5rem 1rem;
+    border-radius: .25rem;
+    background: var(--color-bg-card);
+    margin: .75rem 0;
+    display: flex;
+    gap: .75rem;
+  }
+  .response-callout.warning { border-left-color: #eab308; }   /* amber */
+  .response-callout .callout-icon { font-size: 1.4rem; line-height: 1; }
+  .response-callout .callout-content p { margin: 0; }
+  
+  /* Loading dots ------------------------------------------------------------ */
+  .loading-dots { display: inline-flex; gap: .25rem; }
+  .loading-dot {
+    width: .4rem; height: .4rem;
+    border-radius: 9999px;
+    background: var(--color-accent);
+    animation: pulse 1.2s infinite ease-in-out;
+  }
+  .loading-dot:nth-child(2) { animation-delay: .2s; }
+  .loading-dot:nth-child(3) { animation-delay: .4s; }
+  @keyframes pulse { 0%,80%,100% { opacity: .2; } 40% { opacity: 1; } }
+
+  /* ───────────────────────────────────────────────────────────────
+   Chat spacing tweaks – 2025‑05‑30
+   Adds breathing room between messages and inside paragraphs
+   ────────────────────────────────────────────────────────────── */
+
+/* Space between consecutive chat bubbles */
+.message-bubble {
+  margin-bottom: 1.5rem;   /* adjust if you want more/less space */
+}
+
+/* Paragraph spacing within a single message */
+.message-content .message-text p {
+  margin-bottom: 0.75rem;  /* space between paragraphs */
+}
+.message-content .message-text p:last-child {
+  margin-bottom: 0;        /* no extra gap after the last paragraph */
 }
