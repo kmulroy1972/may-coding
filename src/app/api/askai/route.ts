@@ -3,801 +3,608 @@ import { ChatOpenAI } from '@langchain/openai';
 import { PromptTemplate } from '@langchain/core/prompts';
 import { supabase } from '@/lib/supabase';
 import type { Earmark } from 'types/database.types';
-// Fix import path
-import { addMessage, getConversationContext } from '@/lib/conversationMemory';
-import OpenAI from 'openai';
+import { 
+  addMessage, 
+  getConversationContext, 
+  updateUserPreferences,
+  getQueryContext,
+  addQueryPattern,
+  updateSessionFocus,
+  getContextualSuggestions
+} from '@/lib/conversationMemory';
 
-/* ───────────────────────────── OpenAI ───────────────────────────── */
+/* ───────────────────────────── AI Configuration ───────────────────────────── */
 const llm = new ChatOpenAI({
-  modelName: 'gpt-4-turbo', // Using the latest available model for better capabilities
+  modelName: 'gpt-4-turbo',
   openAIApiKey: process.env.OPENAI_API_KEY,
-  temperature: 0.7 // Add some creativity but not too much
+  temperature: 0.2
 });
 
-// Initialize OpenAI client for file search
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+/* ────────────────────── Domain Knowledge ─────────────────── */
+const DOMAIN_KNOWLEDGE = {
+  agencies: new Map([
+    ['labor', 'Department of Labor'],
+    ['dol', 'Department of Labor'],
+    ['hud', 'Department of Housing and Urban Development'],
+    ['housing', 'Department of Housing and Urban Development'],
+    ['treasury', 'Department of the Treasury'],
+    ['education', 'Department of Education'],
+    ['ed', 'Department of Education'],
+    ['transportation', 'Department of Transportation'],
+    ['dot', 'Department of Transportation'],
+    ['hhs', 'Department of Health and Human Services'],
+    ['health', 'Department of Health and Human Services'],
+    ['defense', 'Department of Defense'],
+    ['dod', 'Department of Defense'],
+    ['agriculture', 'Department of Agriculture'],
+    ['usda', 'Department of Agriculture'],
+    ['interior', 'Department of the Interior'],
+    ['energy', 'Department of Energy'],
+    ['commerce', 'Department of Commerce'],
+    ['justice', 'Department of Justice'],
+    ['doj', 'Department of Justice'],
+    ['veterans', 'Department of Veterans Affairs'],
+    ['va', 'Department of Veterans Affairs'],
+    ['homeland', 'Department of Homeland Security'],
+    ['dhs', 'Department of Homeland Security']
+  ]),
 
-/* ────────────────────── helpers & regex section ─────────────────── */
-// State name to postal code mapping
+  medicalEquipment: new Map([
+    ['mri', 'Medical Research Infrastructure'],
+    ['ct scan', 'Medical Equipment'],
+    ['x-ray', 'Medical Equipment'],
+    ['ultrasound', 'Medical Equipment'],
+    ['dialysis', 'Medical Equipment'],
+    ['ventilator', 'Medical Equipment'],
+    ['hospital equipment', 'Medical Infrastructure'],
+    ['medical device', 'Medical Equipment'],
+    ['laboratory equipment', 'Medical Research'],
+    ['imaging equipment', 'Medical Infrastructure']
+  ])
+};
+
+const STATE_MAPPING = new Map([
+  ['alabama', 'AL'], ['alaska', 'AK'], ['arizona', 'AZ'], ['arkansas', 'AR'],
+  ['california', 'CA'], ['colorado', 'CO'], ['connecticut', 'CT'], ['delaware', 'DE'],
+  ['florida', 'FL'], ['georgia', 'GA'], ['hawaii', 'HI'], ['idaho', 'ID'],
+  ['illinois', 'IL'], ['indiana', 'IN'], ['iowa', 'IA'], ['kansas', 'KS'],
+  ['kentucky', 'KY'], ['louisiana', 'LA'], ['maine', 'ME'], ['maryland', 'MD'],
+  ['massachusetts', 'MA'], ['michigan', 'MI'], ['minnesota', 'MN'], ['mississippi', 'MS'],
+  ['missouri', 'MO'], ['montana', 'MT'], ['nebraska', 'NE'], ['nevada', 'NV'],
+  ['new hampshire', 'NH'], ['new jersey', 'NJ'], ['new mexico', 'NM'], ['new york', 'NY'],
+  ['north carolina', 'NC'], ['north dakota', 'ND'], ['ohio', 'OH'], ['oklahoma', 'OK'],
+  ['oregon', 'OR'], ['pennsylvania', 'PA'], ['rhode island', 'RI'], ['south carolina', 'SC'],
+  ['south dakota', 'SD'], ['tennessee', 'TN'], ['texas', 'TX'], ['utah', 'UT'],
+  ['vermont', 'VT'], ['virginia', 'VA'], ['washington', 'WA'], ['west virginia', 'WV'],
+  ['wisconsin', 'WI'], ['wyoming', 'WY'], ['district of columbia', 'DC']
+]);
+
+/* ────────────────────── Enhanced Entity Extraction ─────────────────── */
+interface ExtractedEntities {
+  member: string | null;
+  year: number | null;
+  agency: string | null;
+  minAmount: number | null;
+  maxAmount: number | null;
+  location: string | null;
+  keywords: string[];
+  intent: 'search' | 'list' | 'analyze' | 'compare' | 'summarize' | 'guidance';
+  confidence: number;
+  equipmentType?: string | null;
+}
+
 function getStateCode(stateName: string): string | null {
-  const stateMap: Record<string, string> = {
-    'alabama': 'AL', 'alaska': 'AK', 'arizona': 'AZ', 'arkansas': 'AR',
-    'california': 'CA', 'colorado': 'CO', 'connecticut': 'CT', 'delaware': 'DE',
-    'florida': 'FL', 'georgia': 'GA', 'hawaii': 'HI', 'idaho': 'ID',
-    'illinois': 'IL', 'indiana': 'IN', 'iowa': 'IA', 'kansas': 'KS',
-    'kentucky': 'KY', 'louisiana': 'LA', 'maine': 'ME', 'maryland': 'MD',
-    'massachusetts': 'MA', 'michigan': 'MI', 'minnesota': 'MN', 'mississippi': 'MS',
-    'missouri': 'MO', 'montana': 'MT', 'nebraska': 'NE', 'nevada': 'NV',
-    'new hampshire': 'NH', 'new jersey': 'NJ', 'new mexico': 'NM', 'new york': 'NY',
-    'north carolina': 'NC', 'north dakota': 'ND', 'ohio': 'OH', 'oklahoma': 'OK',
-    'oregon': 'OR', 'pennsylvania': 'PA', 'rhode island': 'RI', 'south carolina': 'SC',
-    'south dakota': 'SD', 'tennessee': 'TN', 'texas': 'TX', 'utah': 'UT',
-    'vermont': 'VT', 'virginia': 'VA', 'washington': 'WA', 'west virginia': 'WV',
-    'wisconsin': 'WI', 'wyoming': 'WY', 'district of columbia': 'DC',
-    'puerto rico': 'PR', 'guam': 'GU', 'american samoa': 'AS',
-    'virgin islands': 'VI', 'northern mariana islands': 'MP'
-  };
-
-  // Handle abbreviations
   if (/^[A-Za-z]{2}$/.test(stateName)) {
     return stateName.toUpperCase();
   }
-
-  // Handle full state names
-  const normalizedName = stateName.toLowerCase().trim();
-  return stateMap[normalizedName] || null;
+  const normalized = stateName.toLowerCase().trim();
+  return STATE_MAPPING.get(normalized) || null;
 }
 
-function dollars(raw: string): number {
-  // "5,000", "2.5", "3m", "3 million" → dollars
-  const n = parseFloat(raw.replace(/,/g, ''));
-  return /m(illion)?/i.test(raw) ? n * 1_000_000 : n;
-}
-
-function extractEntities(question: string) {
-  // Try multiple patterns to extract member names
-  let memberMatch = question.match(
-    /\b(?:Sen(?:ator)?|Rep(?:resentative)?|Congress(?:man|woman)?)\.?\s+([\w'-]+(?:\s+[\w'-]+)?)\b/i
-  );
+function parseAmount(amountText: string): number {
+  const cleaned = amountText.replace(/[,$]/g, '');
+  const num = parseFloat(cleaned);
   
-  // If that doesn't work, try just looking for common surnames after these titles
-  if (!memberMatch || memberMatch[1].includes('secured') || memberMatch[1].includes('requested')) {
-    memberMatch = question.match(/\b(?:Sen(?:ator)?|Rep(?:resentative)?)\.?\s+([\w'-]+)\b/i);
+  if (/m(illion)?/i.test(amountText)) return num * 1_000_000;
+  if (/b(illion)?/i.test(amountText)) return num * 1_000_000_000;
+  if (/k/i.test(amountText)) return num * 1_000;
+  
+  return num;
+}
+
+function classifyIntent(question: string): 'search' | 'list' | 'analyze' | 'compare' | 'summarize' | 'guidance' {
+  const lowerQ = question.toLowerCase();
+  
+  if (lowerQ.includes('compare') || lowerQ.includes('versus') || lowerQ.includes('vs')) return 'compare';
+  if (lowerQ.includes('analyze') || lowerQ.includes('analysis') || lowerQ.includes('trend')) return 'analyze';
+  if (lowerQ.includes('summary') || lowerQ.includes('summarize') || lowerQ.includes('overview')) return 'summarize';
+  if (lowerQ.includes('list') || lowerQ.includes('show all') || lowerQ.includes('all earmarks')) return 'list';
+  if (lowerQ.includes('best') || lowerQ.includes('should') || lowerQ.includes('recommend') || 
+      lowerQ.includes('guidance') || lowerQ.includes('how to') || lowerQ.includes('what account')) return 'guidance';
+  
+  return 'search';
+}
+
+function enhancedEntityExtraction(question: string, conversationContext: any = {}): ExtractedEntities {
+  console.log('🔍 Enhanced entity extraction for:', question);
+  
+  const lowerQ = question.toLowerCase();
+  let confidence = 0.5;
+  
+  const intent = classifyIntent(question);
+  
+  // Use conversation context to enhance extraction
+  let member: string | null = null;
+  let agency: string | null = null;
+  let equipmentType: string | null = null;
+  let year: number | null = null;
+  let location: string | null = null;
+  
+  // Check conversation context for hints
+  if (conversationContext.currentFocus) {
+    const focus = conversationContext.currentFocus;
+    if (!agency && focus.agency) {
+      agency = focus.agency;
+      confidence += 0.1;
+    }
+    if (!equipmentType && focus.equipmentType) {
+      equipmentType = focus.equipmentType;
+      confidence += 0.1;
+    }
+    if (!year && focus.year) {
+      year = focus.year;
+      confidence += 0.1;
+    }
+    if (!location && focus.location) {
+      location = focus.location;
+      confidence += 0.1;
+    }
   }
-  const yearMatch   = question.match(/\b(?:FY\s*)?(20\d{2})\b/i);
-  const agencyMatch = question.match(
-    /\b(?:U\.?S\.?\s+)?(?:Department|Dept\.?)\s+of\s+([\w\s&]+?)(?:\s+in\s+|\s+for\s+|\s*$)/i
-  );
-
-  const overMatch  = question.match(/(?:over|above|greater than)\s+\$?([\d.,]+\s*(?:m(?:illion)?)?)/i);
-  const underMatch = question.match(/(?:under|below|less than)\s+\$?([\d.,]+\s*(?:m(?:illion)?)?)/i);
-
-  // Enhanced location patterns - more comprehensive
-  const locationPatterns = [
-    /\bin\s+([A-Za-z][A-Za-z\s]+?)(?:\b|$)/i,                 // "in California"
-    /\bfor\s+([A-Za-z][A-Za-z\s]+?)(?:\b|$)/i,                // "for Texas"
-    /\b((?:New\s+)?[A-Za-z]+(?:\s+[A-Za-z]+)?)\s+projects\b/i, // "New Jersey projects"
-    /\bfunded\s+in\s+([A-Za-z][A-Za-z\s]+?)(?:\b|$)/i,        // "funded in Arizona"
-    /\bprojects\s+in\s+([A-Za-z][A-Za-z\s]+?)(?:\b|$)/i,      // "projects in Oregon"
-    /\b([A-Za-z][A-Za-z\s]+?)\s+earmarks\b/i,                 // "California earmarks"
-    /\b([A-Za-z][A-Za-z\s]+?)\s+funding\b/i,                  // "Texas funding"
-    /\b([A-Za-z][A-Za-z\s]+?)\s+allocations\b/i               // "Ohio allocations"
-  ];
-
-  let locationMatch = null;
-  let locationText = null;
-
-  // Try each pattern until we get a match
-  for (const pattern of locationPatterns) {
-    locationMatch = question.match(pattern);
-    if (locationMatch) {
-      locationText = locationMatch[1].trim();
+  
+  // Member extraction
+  const memberMatch = question.match(/\b(?:Sen(?:ator)?|Rep(?:resentative)?|Congress(?:man|woman)?)\.?\s+([\w'-]+(?:\s+[\w'-]+)*)\b/gi);
+  if (memberMatch && memberMatch[1]) {
+    member = memberMatch[1].trim();
+    confidence += 0.2;
+  }
+  
+  // Year extraction
+  const yearMatch = question.match(/\b(?:FY\s*)?(?:20)?(2[2-4])\b/i);
+  if (yearMatch) {
+    year = 2000 + parseInt(yearMatch[1]);
+    confidence += 0.2;
+  }
+  
+  // Agency extraction
+  for (const [key, fullName] of DOMAIN_KNOWLEDGE.agencies) {
+    if (lowerQ.includes(key)) {
+      agency = fullName.replace('Department of ', '');
+      confidence += 0.2;
       break;
     }
   }
   
-  // Get location code if we have a match
-  const locationCode = locationText ? getStateCode(locationText) : null;
-
-  const member = memberMatch ? memberMatch[1].trim() : null;
-  const year   = yearMatch   ? parseInt(yearMatch[1], 10) : null;
-  const agency = agencyMatch ? agencyMatch[1].trim() : null;
-
-  const minAmount = overMatch  ? dollars(overMatch[1])  : null;
-  const maxAmount = underMatch ? dollars(underMatch[1]) : null;
-
-  /* crude keyword extraction */
-  const strip = (s: string | undefined | null) => (s ? question.replace(s, '') : question);
-  let cleaned = strip(memberMatch?.[0]);
-  cleaned     = strip(yearMatch?.[0]);
-  cleaned     = strip(agencyMatch?.[0]);
-  cleaned     = strip(overMatch?.[0]);
-  cleaned     = strip(underMatch?.[0]);
-  cleaned     = strip(locationMatch?.[0]);
-
-  const stop = new Set(['projects','earmarks','funding','funded','department',
-                        'earmark','of','the','and','in','for','on','senator','representative',
-                        'secured','requested','congress','congressman','congresswoman']);
-  
-  // Also exclude the member name from keywords if we found one
-  const memberName = member ? member.toLowerCase() : '';
-  
-  const keywords = cleaned
-    .split(/\s+/)
-    .map(w => w.toLowerCase().trim())
-    .filter(w => w.length > 3 && !stop.has(w) && w !== memberName);
-
-  // Handle common agency abbreviations and aliases
-  const agencyAliases: Record<string, string> = {
-    'labor': 'Labor',
-    'hud': 'Housing and Urban Development',
-    'treasury': 'Treasury',
-    'education': 'Education',
-    'transportation': 'Transportation',
-    'dot': 'Transportation',
-    'hhs': 'Health and Human Services',
-    'health': 'Health and Human Services',
-    'defense': 'Defense',
-    'dod': 'Defense',
-    'agriculture': 'Agriculture',
-    'usda': 'Agriculture',
-    'interior': 'Interior',
-    'energy': 'Energy',
-    'commerce': 'Commerce',
-    'justice': 'Justice',
-    'doj': 'Justice',
-    'epa': 'Environmental Protection',
-    'environmental': 'Environmental Protection',
-    'veterans': 'Veterans Affairs',
-    'va': 'Veterans Affairs'
-  };
-
-  // Check for agency aliases in the question
-  if (!agency) {
-    for (const [alias, fullName] of Object.entries(agencyAliases)) {
-      if (question.toLowerCase().includes(alias)) {
-        return { member, year, agency: fullName, minAmount, maxAmount, keywords, location: locationCode };
-      }
+  // Equipment type detection
+  for (const [key, type] of DOMAIN_KNOWLEDGE.medicalEquipment) {
+    if (lowerQ.includes(key)) {
+      equipmentType = type;
+      confidence += 0.15;
+      break;
     }
   }
-
-  return { member, year, agency, minAmount, maxAmount, keywords, location: locationCode };
-}
-
-function fmt(n: number) {
-  return n >= 1_000_000
-    ? '$' + (n / 1_000_000).toFixed(1) + ' m'
-    : '$' + n.toLocaleString();
-}
-
-/* ────────────────────── Supabase query helper ───────────────────── */
-async function queryEarmarks(f: ReturnType<typeof extractEntities>): Promise<Earmark[]> {
-  console.log('Starting query with filters:', JSON.stringify(f, null, 2));
   
-  let q = supabase.from('earmarks').select('*');
-
-  // Fix member search to handle the actual database format where multiple members are in one field
-  if (f.member) {
-    // Handle different name formats: "Menendez" should match "Senator Robert Menendez" 
-    const memberLastName = f.member.split(' ').pop(); // Get last word as surname
-    q = q.ilike('member', `%${memberLastName}%`);
+  // Amount extraction
+  let minAmount: number | null = null;
+  let maxAmount: number | null = null;
+  
+  const overMatch = question.match(/(?:over|above|greater than|more than)\s+\$?([\d.,]+\s*(?:[kmb](?:illion|million)?)?)/gi);
+  const underMatch = question.match(/(?:under|below|less than|fewer than)\s+\$?([\d.,]+\s*(?:[kmb](?:illion|million)?)?)/gi);
+  
+  if (overMatch) {
+    minAmount = parseAmount(overMatch[1]);
+    confidence += 0.15;
   }
-
-  if (f.year)       q = q.eq('year', f.year);
-  
-  // Fix agency search to handle "Department of" prefix
-  if (f.agency)     q = q.eq('agency', `Department of ${f.agency}`);
-  
-  // Fix amount comparison
-  if (f.minAmount)  q = q.gte('amount', f.minAmount);
-  if (f.maxAmount)  q = q.lte('amount', f.maxAmount);
-  
-  // Fix location search
-  if (f.location)   q = q.ilike('location', `%${f.location}%`);
-
-  // Improve keyword search
-  if (f.keywords.length) {
-    const conditions = [];
-    for (const keyword of f.keywords) {
-      conditions.push(
-        `recipient.ilike.%${keyword}%`,
-        `subcommittee.ilike.%${keyword}%`,
-        `account.ilike.%${keyword}%`,
-        `location.ilike.%${keyword}%`,
-        `budget_function.ilike.%${keyword}%`
-      );
-    }
-    q = q.or(conditions.join(','));
-  }
-
-  // Log the query parameters
-  console.log('Query Parameters:', {
-    member: f.member ? `%${f.member}%` : null,
-    year: f.year,
-    agency: f.agency ? `Department of ${f.agency}` : null,
-    minAmount: f.minAmount,
-    maxAmount: f.maxAmount,
-    location: f.location ? `%${f.location}%` : null,
-    keywords: f.keywords.length ? f.keywords.join(' ') : null
-  });
-
-  // Add sorting and limit
-  const { data, error } = await q
-    .order('amount', { ascending: false })
-    .limit(1000);
-  
-  console.log('DEBUG: Generated query data length:', data?.length);
-  console.log('DEBUG: Query error:', error);
-  
-  if (error) {
-    console.error('Supabase query error:', error);
-    throw new Error(error.message);
+  if (underMatch) {
+    maxAmount = parseAmount(underMatch[1]);
+    confidence += 0.15;
   }
   
-  console.log('Query results:', data?.length || 0, 'records found');
-  return data || [];
-}
-
-/**
- * Use AI to interpret natural language queries into database filters
- */
-async function interpretQueryWithAI(question: string): Promise<ReturnType<typeof extractEntities> | null> {
-  try {
-    const interpretationPrompt = `
-You are a query interpreter for a federal earmarks database. Convert this natural language question into database search parameters.
-
-The database has these fields:
-- member: Congressional member names (stored as "Senator X" or "Rep. Y")
-- year: Fiscal year (2022, 2023, 2024)
-- agency: Department names (stored as "Department of X")
-- amount: Dollar amounts
-- location: State codes
-- recipient: Project recipient and description
-
-Question: "${question}"
-
-Extract ONLY the specific search parameters. Ignore action words like "secured", "requested", "list", "show", "total", etc.
-
-Respond with a JSON object with these fields (use null for empty):
-{
-  "member": "lastname only",
-  "year": number or null,
-  "agency": "department name without 'Department of'" or null,
-  "minAmount": number or null,
-  "maxAmount": number or null,
-  "location": "state code" or null,
-  "keywords": []
-}
-
-Examples:
-- "Senator Smith's earmarks" → {"member": "Smith", "year": null, "agency": null, "minAmount": null, "maxAmount": null, "location": null, "keywords": []}
-- "Transportation earmarks in 2023" → {"member": null, "year": 2023, "agency": "Transportation", "minAmount": null, "maxAmount": null, "location": null, "keywords": []}
-`;
-
-    const result = await llm.invoke(interpretationPrompt);
-    const response = result.content.toString().trim();
+  // Location extraction
+  if (!location) {
+    const locationPatterns = [
+      /\bin\s+([A-Za-z][A-Za-z\s]+?)(?:\s+(?:state|projects?|earmarks?|funding)|$)/gi,
+      /\bfor\s+([A-Za-z][A-Za-z\s]+?)(?:\s+(?:projects?|earmarks?|funding)|$)/gi
+    ];
     
-    // Try to parse the JSON response
-    const jsonMatch = response.match(/\{[^}]+\}/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
-      console.log('AI interpretation successful:', parsed);
-      return parsed;
-    }
-    
-    console.log('AI interpretation failed to return valid JSON');
-    return null;
-    
-  } catch (error) {
-    console.error('AI interpretation error:', error);
-    return null;
-  }
-}
-
-/**
- * Retrieves relevant document content using OpenAI's File Search
- */
-async function getRelevantDocumentContent(question: string): Promise<{
-  content: string;
-  citations: Array<{filename: string; fileId: string}>;
-}> {
-  const vectorStoreId = process.env.OPENAI_VECTOR_STORE_ID;
-  
-  if (!vectorStoreId) {
-    console.warn('OPENAI_VECTOR_STORE_ID not configured, skipping document search');
-    return {
-      content: `
-DOCUMENT SEARCH: No vector store configured.
-
-To enable document search:
-1. Run: npm run setup-vector-store
-2. Run: npm run upload-docs
-3. Add OPENAI_VECTOR_STORE_ID to your .env.local file
-
-Using fallback earmark information:
-- Community Project Funding (CPF) in House, Congressionally Directed Spending (CDS) in Senate
-- FY 2025-2026 Request window: Mar 25 - Apr 15 2025 (House)
-- 15-project cap per Member, Non-profits ineligible for HUD-EDI account
-- Defense, MilCon-VA, and THUD accounts restored after FY 2024 pause
-`,
-      citations: []
-    };
-  }
-
-  try {
-    console.log('🔍 Searching documents for:', question);
-    
-    // Use OpenAI's Responses API with file search
-    const response = await openai.responses.create({
-      model: "gpt-4o-mini", // Efficient model for document search
-      input: `Find information relevant to this earmark/funding question: ${question}`,
-      tools: [{
-        type: "file_search",
-        vector_store_ids: [vectorStoreId],
-        max_num_results: 5 // Limit results for performance
-      }],
-      include: ["file_search_call.results"] // Include search results in response
-    });
-
-    // Extract content and citations from response
-    let documentContent = '';
-    const citations: Array<{filename: string; fileId: string}> = [];
-    
-    for (const output of response.output) {
-      if (output.type === 'message' && output.content) {
-        for (const contentItem of output.content) {
-          if (contentItem.type === 'output_text') {
-            documentContent += contentItem.text;
-            
-            // Extract citations from annotations
-            if (contentItem.annotations) {
-              for (const annotation of contentItem.annotations) {
-                if (annotation.type === 'file_citation') {
-                  // Handle file citation annotation
-                  const fileCitation = annotation as {
-                    type: 'file_citation';
-                    filename?: string;
-                    file_id?: string;
-                  };
-                  citations.push({
-                    filename: fileCitation.filename || 'Unknown file',
-                    fileId: fileCitation.file_id || 'unknown'
-                  });
-                }
-              }
-            }
-          }
+    for (const pattern of locationPatterns) {
+      const match = question.match(pattern);
+      if (match && match[1]) {
+        const stateCode = getStateCode(match[1].trim());
+        if (stateCode) {
+          location = stateCode;
+          confidence += 0.2;
+          break;
         }
       }
     }
-
-    // Format the document content
-    const formattedContent = documentContent ? `
-DOCUMENT SEARCH RESULTS:
-
-${documentContent}
-
-${citations.length > 0 ? `
-SOURCES:
-${citations.map(c => `- ${c.filename}`).join('\n')}
-` : ''}
-` : `
-DOCUMENT SEARCH: No relevant documents found for this query.
-
-Consider uploading more documents related to:
-- Appropriations committee guidelines
-- Earmark process documentation
-- Agency-specific funding rules
-- Legislative procedures
-`;
-
-    console.log(`📄 Found ${citations.length} document citations`);
-    
-    return {
-      content: formattedContent,
-      citations
-    };
-
-  } catch (error) {
-    console.error('Document search error:', error);
-    
-    return {
-      content: `
-DOCUMENT SEARCH ERROR: Unable to search documents at this time.
-
-Error: ${error instanceof Error ? error.message : 'Unknown error'}
-
-Using fallback earmark information:
-- Community Project Funding (CPF) in House, Congressionally Directed Spending (CDS) in Senate
-- Members submit requests during specific windows (typically March-May)
-- Each Member limited in number of requests (House: 15 per Member)
-- No for-profit recipients allowed
-- Requires documented community support and public disclosure
-`,
-      citations: []
-    };
   }
-}
-
-/* Function to build context for OpenAI */
-async function buildOpenAIContext(
-  question: string, 
-  filters: ReturnType<typeof extractEntities>, 
-  earmarks: Earmark[],
-  conversationContext: string = ''
-): Promise<{
-  context: string;
-  citations: Array<{filename: string; fileId: string}>;
-}> {
-  // Create a summary of the filters applied
-  const filterSummary = [
-    filters.year ? `Year: ${filters.year}` : null,
-    filters.agency ? `Agency: Department of ${filters.agency}` : null,
-    filters.member ? `Member: ${filters.member}` : null,
-    filters.minAmount ? `Minimum Amount: $${filters.minAmount.toLocaleString()}` : null,
-    filters.maxAmount ? `Maximum Amount: $${filters.maxAmount.toLocaleString()}` : null,
-    filters.location ? `Location: ${filters.location}` : null,
-    filters.keywords.length ? `Keywords: ${filters.keywords.join(', ')}` : null
-  ].filter((item): item is string => item !== null);  // Type guard to ensure string[]
   
-  // Show sample records (more for "list all" queries, fewer for others)
-  const isListAllQuery = question.toLowerCase().includes('all') || question.toLowerCase().includes('list');
-  const recordsToShow = isListAllQuery ? Math.min(earmarks.length, 50) : 5;
-  const sampleRecords = earmarks.slice(0, recordsToShow).map((e, i) => 
-    `**${i+1}. ${e.recipient}**
-
-**FY Year:** ${e.year}  
-**Amount:** ${fmt(e.amount)}  
-**Location:** ${e.location || 'N/A'}  
-**Subcommittee:** ${e.subcommittee || 'N/A'}  
-**Department:** ${e.agency}  
-**Agency:** ${e.subunit || 'N/A'}  
-**Account:** ${e.account || 'N/A'}  
-**Member:** ${e.member || 'N/A'}  
-
----`
-  ).join('\n\n');
-
-  // Build statistics if we have results
-  let stats = '';
-  if (earmarks.length > 0) {
-    const total = earmarks.reduce((sum, e) => sum + e.amount, 0);
-    const avg = total / earmarks.length;
-    const min = Math.min(...earmarks.map(e => e.amount));
-    const max = Math.max(...earmarks.map(e => e.amount));
-    
-    stats = `
-STATISTICS:
-- Total amount: ${fmt(total)}
-- Average amount: ${fmt(avg)}
-- Smallest earmark: ${fmt(min)}
-- Largest earmark: ${fmt(max)}
-- Most common agency: ${getMostCommon(earmarks.map(e => e.agency))}
-- Most common recipient type: ${getMostCommon(earmarks.map(e => e.budget_function).filter((f): f is string => Boolean(f)))}`;
-  }
-
-  // Get relevant document content using file search
-  const documentSearch = await getRelevantDocumentContent(question);
-
-  // Streamlined context - only include relevant details
-  const earmarkReference = `
-SYSTEM CONTEXT: You are Mosaic's AI assistant for analyzing federal earmark data from FY2022-2024.
-
-KEY CONTEXT:
-- Earmarks are Congressional funding directed to specific recipients/projects
-- Data covers fiscal years 2022-2024 (federal fiscal year = Oct 1 - Sep 30)
-- Member field may contain multiple congresspeople per earmark
-- Amounts are in nominal dollars
-
-${documentSearch.content}
-`;
-
-  const context = `
-You are an AI assistant for a federal earmarks database called Mosaic. You help users query and understand earmark allocations.
-
-${earmarkReference}
-
-${conversationContext ? `${conversationContext}\n` : ''}
-
-DATABASE CONTEXT:
-- The database contains earmark allocations for federal funding from FY 2022-2024
-- The user asked: "${question}"
-- Filters applied: ${filterSummary.length > 0 ? filterSummary.join(', ') : 'None'}
-- Number of matching records: ${earmarks.length}
-
-${earmarks.length > 0 
-  ? `SAMPLE RECORDS:
-${sampleRecords}
-
-${stats}`
-  : 'No matching records found.'}
-
-INSTRUCTIONS:
-1. **Be direct and concise** - provide exactly what the user asked for
-2. **For listing queries**: Start your response with exactly "SAMPLE RECORDS:" then present the raw data without any markdown formatting
-3. **For summary queries**: Provide totals and key statistics without excessive commentary
-4. **Format dollar amounts clearly** (e.g., $1.5 million or $500,000)
-5. **Show ALL available records** when user asks for "all" or "list"
-6. **Avoid unnecessary analysis** unless specifically requested
-7. **No promotional language** or suggestions for next steps unless asked
-8. **If no records found**: Simply state the fact and suggest alternatives briefly
-
-**CRITICAL**: When showing project lists, respond with exactly what is provided in the SAMPLE RECORDS section with no changes, additions, or reformatting.
-
-**Response Style:**
-- Direct, factual, data-focused
-- Minimal commentary unless analysis is specifically requested
-- Clean formatting with clear organization
-- No marketing language or excessive enthusiasm
-`;
-
+  // Keywords
+  const stopWords = new Set([
+    'projects', 'earmarks', 'funding', 'department', 'show', 'me', 'list', 'all', 
+    'what', 'best', 'should', 'account', 'request', 'for', 'the', 'and', 'of'
+  ]);
+  
+  const keywords = question
+    .split(/\s+/)
+    .map(w => w.toLowerCase().replace(/[^\w]/g, ''))
+    .filter(w => w.length > 2 && !stopWords.has(w))
+    .slice(0, 5);
+  
+  console.log('✓ Enhanced extraction results:', {
+    member, year, agency, minAmount, maxAmount, location, keywords, intent, confidence, equipmentType
+  });
+  
   return {
-    context,
-    citations: documentSearch.citations
+    member,
+    year,
+    agency,
+    minAmount,
+    maxAmount,
+    location,
+    keywords,
+    intent,
+    confidence: Math.min(confidence, 1.0),
+    equipmentType
   };
 }
 
-/* Helper function to find most common value in an array */
-function getMostCommon(arr: string[]): string {
-  const counts = arr.reduce((acc, val) => {
-    acc[val] = (acc[val] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
+/* ────────────────────── Query Builder ─────────────────── */
+async function queryEarmarks(filters: ExtractedEntities): Promise<Earmark[]> {
+  console.log('🔍 Building query with filters:', filters);
   
-  let maxCount = 0;
-  let maxVal = '';
+  let query = supabase.from('earmarks').select('*');
   
-  for (const [val, count] of Object.entries(counts)) {
-    if (count > maxCount) {
-      maxCount = count;
-      maxVal = val;
-    }
+  if (filters.member) {
+    const memberLastName = filters.member.split(' ').pop() || filters.member;
+    query = query.ilike('member', `%${memberLastName}%`);
   }
   
-  return maxVal;
+  if (filters.year) {
+    query = query.eq('year', filters.year);
+  }
+  
+  if (filters.agency) {
+    const agencyName = `Department of ${filters.agency}`;
+    query = query.eq('agency', agencyName);
+  }
+  
+  if (filters.minAmount) {
+    query = query.gte('amount', filters.minAmount);
+  }
+  
+  if (filters.maxAmount) {
+    query = query.lte('amount', filters.maxAmount);
+  }
+  
+  if (filters.location) {
+    query = query.ilike('location', `%${filters.location}%`);
+  }
+  
+  if (filters.keywords.length > 0) {
+    const keywordConditions = [];
+    for (const keyword of filters.keywords) {
+      keywordConditions.push(
+        `recipient.ilike.%${keyword}%`,
+        `subcommittee.ilike.%${keyword}%`,
+        `account.ilike.%${keyword}%`,
+        `budget_function.ilike.%${keyword}%`
+      );
+    }
+    query = query.or(keywordConditions.join(','));
+  }
+  
+  query = query.order('amount', { ascending: false }).limit(50);
+  
+  const { data, error } = await query;
+  
+  if (error) {
+    console.error('❌ Query error:', error);
+    throw new Error(error.message);
+  }
+  
+  console.log(`✓ Query returned ${data?.length || 0} results`);
+  return data || [];
 }
 
-/* ────────────────────────── API handler ────────────────────────── */
+/* ────────────────────── Guidance System ─────────────────── */
+function generateFundingGuidance(question: string, filters: ExtractedEntities): string {
+  const lowerQ = question.toLowerCase();
+  
+  if (lowerQ.includes('mri') || (lowerQ.includes('hospital') && lowerQ.includes('equipment'))) {
+    return `
+**FUNDING GUIDANCE FOR HOSPITAL MRI EQUIPMENT:**
+
+**🎯 Best Federal Accounts for MRI Machine Funding:**
+
+**1. Department of Health and Human Services (HHS)**
+   - **Account:** "Health Resources and Services Administration (HRSA)"
+   - **Why:** Primary agency for healthcare infrastructure and community health centers
+   - **Typical Range:** $500K - $3M per project
+   - **Best For:** Community hospitals, rural healthcare facilities
+
+**2. Department of Veterans Affairs (VA)**
+   - **Account:** "Medical Facilities Construction"
+   - **Why:** If serving veterans or in partnership with VA medical centers
+   - **Typical Range:** $1M - $5M per project
+   - **Best For:** Hospitals with veteran patient populations
+
+**3. Department of Defense (DOD)**
+   - **Account:** "Defense Health Program" 
+   - **Why:** Military hospitals or facilities serving military families
+   - **Typical Range:** $2M - $10M per project
+   - **Best For:** Military treatment facilities, contractor hospitals
+
+**💰 Typical MRI Equipment Costs:**
+- **Basic 1.5T MRI:** $1M - $1.5M
+- **Advanced 3T MRI:** $2M - $3M  
+- **Installation/Site Prep:** $200K - $500K
+- **Annual Maintenance:** $100K - $200K
+
+**📋 Key Application Requirements:**
+- ✅ Demonstrate clear community medical need
+- ✅ Show hospital's financial contribution (typically 20-50% cost-sharing)
+- ✅ Provide detailed technical specifications and vendor quotes
+- ✅ Include 5-year operational and maintenance plan
+- ✅ Document physician staff training requirements
+- ✅ Show community and medical staff support letters
+
+**📅 Application Process:**
+- **When to Apply:** March - May during appropriations cycle
+- **Who to Contact:** Your Congressional Representative and both Senators
+- **Timeline:** 12-18 months from application to funding
+- **Success Rate:** ~15-25% for well-documented requests
+
+**💡 Pro Tips:**
+- Partner with medical schools or research institutions if possible
+- Emphasize underserved population benefits
+- Include economic impact data (jobs created, patients served)
+- Show how this fills a regional healthcare gap
+
+Would you like me to search for similar MRI funding examples in our earmark database?
+`;
+  }
+
+  return `
+**GENERAL FEDERAL FUNDING GUIDANCE:**
+
+**🎯 Common Funding Sources:**
+1. **Department of Health and Human Services** - Healthcare projects
+2. **Department of Education** - Educational institutions  
+3. **Department of Transportation** - Infrastructure projects
+4. **Department of Agriculture** - Rural community projects
+
+**📋 Application Process:**
+- Contact your Congressional representatives
+- Submit during appropriations windows (March-May)
+- Provide detailed project justification and budget
+- Show community support and demonstrated need
+
+Would you like me to search for similar projects in the earmark database?
+`;
+}
+
+/* ────────────────────── Enhanced Context Builder ─────────────────── */
+function buildEnhancedContext(
+  question: string, 
+  filters: ExtractedEntities, 
+  earmarks: Earmark[], 
+  conversationContext: string,
+  sessionId: string
+): string {
+  
+  if (filters.intent === 'guidance') {
+    const guidance = generateFundingGuidance(question, filters);
+    
+    return `
+You are Mosaic's AI assistant for federal earmark analysis and funding guidance.
+
+${conversationContext}
+
+USER QUERY: "${question}"
+QUERY TYPE: Funding Guidance Request
+DETECTED EQUIPMENT: ${filters.equipmentType || 'General'}
+
+PROVIDE THIS GUIDANCE:
+${guidance}
+
+CONTEXTUAL ENHANCEMENT:
+- Adapt your tone to the user's expertise level shown in session context
+- Reference previous related queries if relevant
+- Suggest logical follow-up questions based on session goals
+
+INSTRUCTIONS:
+1. Present the funding guidance clearly and professionally
+2. Use the exact formatting and information provided above
+3. Offer to search for similar examples if helpful
+4. Be encouraging and specific about next steps
+5. Provide 2-3 relevant follow-up suggestions at the end
+`;
+  }
+  
+  // Regular earmark analysis with enhanced context
+  let analysisContext = '';
+  if (earmarks.length > 0) {
+    const total = earmarks.reduce((sum, e) => sum + e.amount, 0);
+    const avgAmount = total / earmarks.length;
+    
+    analysisContext = `
+ANALYSIS CONTEXT:
+- Total Records: ${earmarks.length}
+- Total Funding: $${(total / 1_000_000).toFixed(1)}M
+- Average Amount: $${(avgAmount / 1_000_000).toFixed(1)}M
+`;
+  }
+  
+  const recordsToShow = Math.min(earmarks.length, 5);
+  const sampleRecords = earmarks.slice(0, recordsToShow).map((e, i) => {
+    const amount = e.amount >= 1_000_000 ? `$${(e.amount / 1_000_000).toFixed(1)}M` : `$${(e.amount / 1_000).toFixed(0)}K`;
+    return `${i + 1}. **${e.recipient}**
+   Amount: ${amount} | Year: FY${e.year} | Location: ${e.location || 'N/A'}
+   Agency: ${e.agency}`;
+  }).join('\n\n');
+  
+  return `
+You are Mosaic's AI assistant for federal earmark analysis.
+
+${conversationContext}
+
+USER QUERY: "${question}"
+INTENT: ${filters.intent}
+CONFIDENCE: ${(filters.confidence * 100).toFixed(0)}%
+
+${analysisContext}
+
+${earmarks.length > 0 ? `
+SAMPLE RECORDS (showing ${recordsToShow} of ${earmarks.length}):
+${sampleRecords}
+` : 'No matching records found.'}
+
+CONTEXTUAL ENHANCEMENT:
+- Consider the user's session goals and topic progression
+- Build on previous successful queries
+- Adapt complexity to user's demonstrated expertise level
+- Reference relevant patterns from conversation history
+
+INSTRUCTIONS:
+1. Provide clear, helpful analysis of the earmark data
+2. Format dollar amounts consistently  
+3. Be direct and informative
+4. Build naturally on the conversation context
+5. Suggest 2-3 relevant follow-up queries at the end
+`;
+}
+
+/* ────────────────────── API Handler ─────────────────── */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    console.log('Received request body:', JSON.stringify(body, null, 2));
+    const sessionId = body.sessionId || `session-${Date.now()}`;
     
-    // Get the session ID (or generate a default one)
-    const sessionId = body.sessionId || 'default-session';
-    
-    // Accept both 'question' and 'messages' from frontend
+    // Extract question
     let question = '';
     if (body.messages && Array.isArray(body.messages) && body.messages.length > 0) {
-      // Use the latest message as the question
       const lastMsg = body.messages[body.messages.length - 1];
       question = lastMsg.text || lastMsg.content || '';
     } else {
       question = (body.question ?? '').trim();
     }
     
-    console.log('Processing question:', question);
-
-    // Add the user's message to conversation history
+    if (!question) {
+      return NextResponse.json({ error: 'Question is required' }, { status: 400 });
+    }
+    
+    console.log(`🚀 Processing query for session ${sessionId}: "${question}"`);
+    
+    // Add user message to conversation
     addMessage(sessionId, 'user', question);
     
-    // Get conversation context
+    // Get enhanced conversation context
     const conversationContext = getConversationContext(sessionId);
-
-    // DEBUGGING: First, try a direct query without entity extraction
-    // This will help us determine if there's data for Department of Labor in 2022
-    if (question.toLowerCase().includes('labor') && question.includes('2022')) {
-      console.log('DEBUG: Attempting direct query for Department of Labor 2022');
-      
-      // Direct query without relying on entity extraction
-      const { data: directData, error: directError } = await supabase
-        .from('earmarks')
-        .select('*')
-        .eq('agency', 'Department of Labor')
-        .eq('year', 2022)
-        .limit(10);
-      
-      if (directError) {
-        console.error('Direct query error:', directError);
-      } else {
-        console.log(`Direct query found ${directData?.length || 0} records:`, directData);
-      }
-
-      // If we have data from the direct query, let's use that
-      if (directData && directData.length > 0) {
-        const contextResult = await buildOpenAIContext(
-          question, 
-          { 
-            year: 2022, 
-            agency: 'Labor', 
-            member: null, 
-            minAmount: null, 
-            maxAmount: null, 
-            keywords: [],
-            location: null
-          }, 
-          directData,
-          conversationContext
-        );
-
-        // Use the LLM directly
-        const prompt = await PromptTemplate.fromTemplate(`
-{context}
-
-Provide a conversational response about the earmark data. Make it informative but friendly and accessible to someone who may not be familiar with government funding terminology.
-`).format({ context: contextResult.context });
-
-        const result = await llm.invoke(prompt);
-        
-        // Add the AI's response to conversation history
-        addMessage(sessionId, 'assistant', result.content.toString());
-
-        return NextResponse.json({ 
-          answer: result.content, 
-          data: directData.slice(0, 10),
-          count: directData.length,
-          citations: contextResult.citations,
-          sessionId: sessionId
-        });
-      }
-    }
-
-    // First, try an AI-powered query interpretation approach
-    const aiInterpretedQuery = await interpretQueryWithAI(question);
-    console.log('AI Interpreted Query:', aiInterpretedQuery);
+    const queryContext = getQueryContext(sessionId);
     
-    // Fallback to entity extraction if AI interpretation fails
-    const filters = aiInterpretedQuery || extractEntities(question);
-    console.log('Final filters used:', filters);
-    console.log('DEBUG: Original question:', question);
-    console.log('DEBUG: Extracted member:', filters.member);
+    // Enhanced entity extraction with conversation context
+    const filters = enhancedEntityExtraction(question, queryContext);
+    console.log('🎯 Enhanced extraction with context:', filters);
     
-    // DEBUG: If looking for Menendez specifically, let's see what member names exist
-    if (question.toLowerCase().includes('menendez')) {
-      console.log('DEBUG: Looking for Menendez, checking database...');
-      const { data: testData, error: testError } = await supabase
-        .from('earmarks')
-        .select('member')
-        .ilike('member', '%menendez%')
-        .limit(5);
-      
-      console.log('DEBUG: Direct Menendez search results:', testData);
-      if (testError) console.log('DEBUG: Direct search error:', testError);
+    // Query earmarks (skip for pure guidance queries)
+    let earmarks: Earmark[] = [];
+    if (filters.intent !== 'guidance' || question.toLowerCase().includes('example')) {
+      earmarks = await queryEarmarks(filters);
     }
     
-    // Log exact query values
-    console.log('Final query parameters:');
-    console.log('- Year:', filters.year);
-    console.log('- Agency:', filters.agency ? `Department of ${filters.agency}` : 'None');
-    console.log('- Member:', filters.member);
-    console.log('- Min Amount:', filters.minAmount);
-    console.log('- Max Amount:', filters.maxAmount);
-    console.log('- Location:', filters.location);
-    console.log('- Keywords:', filters.keywords);
+    console.log(`📊 Found ${earmarks.length} results`);
     
-    const earmarks = await queryEarmarks(filters);
-    console.log(`Found ${earmarks.length} matching earmarks`);
-
-    // If no records found but we have filters, try a more relaxed query
-    if (earmarks.length === 0 && (filters.year || filters.agency || filters.location)) {
-      console.log('No records found with strict filters, trying relaxed query');
-      
-      // Try querying with just the location if specified
-      if (filters.location) {
-        const { data: locationData, error: locationError } = await supabase
-          .from('earmarks')
-          .select('*')
-          .ilike('location', `%${filters.location}%`)  // Using ilike for more flexibility
-          .limit(10);
-        
-        if (!locationError && locationData && locationData.length > 0) {
-          console.log(`Found ${locationData.length} records for location ${filters.location}`);
-          
-          const answer = `I couldn't find earmarks matching all your criteria, but I found ${locationData.length} earmarks in ${filters.location}. Would you like to see those?`;
-          
-          // Add the AI's response to conversation history
-          addMessage(sessionId, 'assistant', answer);
-          
-          return NextResponse.json({
-            answer: answer,
-            data: locationData,
-            count: locationData.length,
-            suggestion: `Show me earmarks in ${filters.location}`,
-            sessionId: sessionId
-          });
-        }
-      }
-      
-      // Try querying with just the year if we have it
-      if (filters.year) {
-        const { data: yearData, error: yearError } = await supabase
-          .from('earmarks')
-          .select('*')
-          .eq('year', filters.year)
-          .limit(10);
-        
-        if (!yearError && yearData && yearData.length > 0) {
-          console.log(`Found ${yearData.length} records for year ${filters.year}`);
-          
-          // If we were looking for a specific member, mention that specifically
-          let answer = '';
-          if (filters.member) {
-            answer = `I couldn't find any earmarks for ${filters.member} in ${filters.year}. However, I found ${yearData.length} other earmarks from ${filters.year}. Would you like to see those, or try a different year for ${filters.member}?`;
-          } else {
-            answer = `I couldn't find earmarks matching all your criteria, but I found ${yearData.length} earmarks from ${filters.year}. Would you like to see those instead?`;
-          }
-          
-          // Add the AI's response to conversation history
-          addMessage(sessionId, 'assistant', answer);
-          
-          return NextResponse.json({
-            answer: answer,
-            data: yearData,
-            count: yearData.length,
-            suggestion: filters.member ? `Show me earmarks for ${filters.member}` : `Show me earmarks from ${filters.year}`,
-            sessionId: sessionId
-          });
-        }
-      }
-      
-      // Try querying with just the agency if we have it
-      if (filters.agency) {
-        const agencyName = `Department of ${filters.agency}`;
-        const { data: agencyData, error: agencyError } = await supabase
-          .from('earmarks')
-          .select('*')
-          .eq('agency', agencyName)
-          .limit(10);
-        
-        if (!agencyError && agencyData && agencyData.length > 0) {
-          console.log(`Found ${agencyData.length} records for agency ${agencyName}`);
-          
-          const answer = `I couldn't find earmarks for ${agencyName} matching all your criteria, but I found ${agencyData.length} earmarks for ${agencyName} from other years. Would you like to see those?`;
-          
-          // Add the AI's response to conversation history
-          addMessage(sessionId, 'assistant', answer);
-          
-          return NextResponse.json({
-            answer: answer,
-            data: agencyData,
-            count: agencyData.length,
-            suggestion: `Show me earmarks from ${agencyName}`,
-            sessionId: sessionId
-          });
-        }
-      }
-    }
-
-    // Build context for OpenAI
-    const contextResult = await buildOpenAIContext(question, filters, earmarks, conversationContext);
+    // Add query pattern for learning
+    addQueryPattern(sessionId, {
+      query: question,
+      filters,
+      resultCount: earmarks.length,
+      intent: filters.intent,
+      equipmentType: filters.equipmentType
+    });
     
-    // Create a prompt template and invoke the model directly
-    const promptTemplate = PromptTemplate.fromTemplate(`
-{context}
-
-Provide a direct, concise response with the requested data. Focus on facts and figures without unnecessary commentary or analysis. Present information in a clear, organized format.
-`);
-
-    const formattedPrompt = await promptTemplate.format({ context: contextResult.context });
+    // Update session focus
+    updateSessionFocus(sessionId, {
+      agency: filters.agency,
+      year: filters.year,
+      location: filters.location,
+      member: filters.member,
+      equipmentType: filters.equipmentType
+    });
+    
+    // Build enhanced context
+    const context = buildEnhancedContext(
+      question, 
+      filters, 
+      earmarks, 
+      conversationContext,
+      sessionId
+    );
+    
+    // Get AI response
+    const promptTemplate = PromptTemplate.fromTemplate(`{context}`);
+    const formattedPrompt = await promptTemplate.format({ context });
     const result = await llm.invoke(formattedPrompt);
     
-    // Add the AI's response to conversation history
-    addMessage(sessionId, 'assistant', result.content.toString());
-
-    return NextResponse.json({ 
-      answer: result.content, 
-      data: earmarks.slice(0, 10),
-      count: earmarks.length,
-      citations: contextResult.citations,
-      sessionId: sessionId
+    const aiResponse = result.content.toString();
+    
+    // Add AI response to conversation with metadata
+    addMessage(sessionId, 'assistant', aiResponse, {
+      intent: filters.intent,
+      resultCount: earmarks.length,
+      confidence: filters.confidence,
+      equipmentType: filters.equipmentType
     });
-
-  } catch (err) {
-    console.error('Error:', err);
+    
+    // Update user preferences based on interaction
+    updateUserPreferences(sessionId, {
+      preferredDataSize: earmarks.length > 20 ? 'detailed' : 'summary',
+      lastQueryIntent: filters.intent
+    });
+    
+    // Get contextual suggestions
+    const suggestions = getContextualSuggestions(sessionId);
+    
+    // Prepare enhanced response
+    const response = {
+      answer: aiResponse,
+      data: earmarks.slice(0, 20),
+      count: earmarks.length,
+      sessionId,
+      queryInfo: {
+        intent: filters.intent,
+        confidence: filters.confidence,
+        equipmentType: filters.equipmentType
+      },
+      suggestions: suggestions.length > 0 ? suggestions : undefined,
+      contextualInfo: {
+        sessionFocus: queryContext.currentFocus,
+        sessionGoals: queryContext.sessionGoals,
+        expertiseLevel: queryContext.expertiseLevel
+      }
+    };
+    
+    console.log(`✅ Enhanced response generated for session ${sessionId}`);
+    return NextResponse.json(response);
+    
+  } catch (error) {
+    console.error('❌ API Error:', error);
+    
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Server error' },
+      { 
+        error: error instanceof Error ? error.message : 'Internal server error'
+      },
       { status: 500 }
     );
   }

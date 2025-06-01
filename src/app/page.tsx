@@ -9,60 +9,6 @@ import Link from "next/link";
 import { sendMessageToAI, clearConversation } from "@/lib/sendMessageToAI";
 import "./globals.css";
 
-/* ---------- Markdown helpers ---------- */
-const LABELS = [
-  "FY Year", "Amount", "Location",
-  "Subcommittee", "Department", "Agency",
-  "Account", "Member"
-];
-
-/* ——————————————————————————————————————————
-   Converts AI record text → Markdown list
-   • Splits raw text into individual records (blank‑line separated)
-   • Formats each record:
-     – First line ➜ bold project title
-     – Standard labels (FY Year, Amount, etc.) ➜ bold
-   • Returns an **ordered list** so your CSS card styles apply
-—————————————————————————————————————————— */
-function formatAIResponse(raw: string): string {
-  if (!raw) return '';
-
-  const labelPattern =
-    /^(FY Year|Amount|Location|Subcommittee|Department|Agency|Account|Member):/i;
-
-  // 1) Split on blank lines ⇒ separate records
-  const records = raw
-    .trim()
-    .split(/\n\s*\n/)      // one or more blank lines
-    .filter(Boolean);
-
-  // 2) Format each record
-  const formattedRecords = records.map(rec => {
-    const lines = rec.split('\n').map((ln, idx) => {
-      const trimmed = ln.trim();
-      if (!trimmed) return '';
-
-      // First line = project title
-      if (idx === 0) return `**${trimmed}**`;
-
-      // Bold recognised labels
-      if (labelPattern.test(trimmed)) {
-        return trimmed.replace(labelPattern, match => `**${match}**`);
-      }
-
-      return trimmed;
-    });
-
-    // Collapse stray blank lines inside a record
-    return lines.filter((l, i, arr) => l || arr[i - 1]).join('\n');
-  });
-
-  // 3) Build an ordered‑list Markdown string
-  return formattedRecords
-    .map((rec, idx) => `${idx + 1}. ${rec}`)
-    .join('\n\n');
-}
-
 /* ── Types ─────────────────────────────────────────── */
 type Message = {
   text: string;
@@ -81,79 +27,16 @@ type ParsedQuery = {
 };
 
 /* ── Component ─────────────────────────────────────── */
-export default function EnhancedHomePage() {
+export default function ProfessionalHomePage() {
   /* Chat state */
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [feedbackGiven, setFeedbackGiven] = useState<Record<number, 'up' | 'down' | null>>({});
-  const [showQueryBuilder, setShowQueryBuilder] = useState(true);
   const [parsedQuery, setParsedQuery] = useState<ParsedQuery | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  
-  /* Predefined options for query builder */
-  const agencies = [
-    { value: "", label: "Select Agency" },
-    { value: "Labor", label: "Department of Labor" },
-    { value: "Transportation", label: "Department of Transportation" },
-    { value: "Health and Human Services", label: "Department of Health and Human Services" },
-    { value: "Housing and Urban Development", label: "Department of Housing and Urban Development" },
-    { value: "Education", label: "Department of Education" },
-    { value: "Defense", label: "Department of Defense" }
-  ];
-
-  const years = [
-    { value: "", label: "Select Year" },
-    { value: 2022, label: "2022" },
-    { value: 2023, label: "2023" },
-    { value: 2024, label: "2024" }
-  ];
-
-  const states = [
-    { value: "", label: "Select State" },
-    { value: "CA", label: "California" },
-    { value: "TX", label: "Texas" },
-    { value: "NY", label: "New York" },
-    { value: "FL", label: "Florida" },
-    { value: "PA", label: "Pennsylvania" },
-    { value: "NJ", label: "New Jersey" }
-  ];
-  
-  /* Sample queries to display */
-  const sampleQueries = [
-    {
-      text: "Show me earmarks from the Department of Education in 2022",
-      icon: "🎓",
-      category: "Education"
-    },
-    {
-      text: "What are the largest earmarks over $1 million?",
-      icon: "💰",
-      category: "High Value"
-    },
-    {
-      text: "Which agencies received the most funding in 2023?",
-      icon: "📊",
-      category: "Analysis"
-    },
-    {
-      text: "Show me earmarks for healthcare projects",
-      icon: "🏥",
-      category: "Healthcare"
-    },
-    {
-      text: "Who requested the most earmarks in California?",
-      icon: "🌴",
-      category: "Regional"
-    },
-    {
-      text: "What are the rules for requesting earmarks?",
-      icon: "📋",
-      category: "Process"
-    }
-  ];
 
   /* Auto-resize textarea */
   useEffect(() => {
@@ -181,9 +64,6 @@ export default function EnhancedHomePage() {
     setMessages((ms) => [...ms, userMsg]);
     setIsLoading(true);
     setInput("");
-    
-    // Hide query builder once user starts chatting
-    setShowQueryBuilder(false);
 
     try {
       /* set typing flag so CSS animation shows */
@@ -204,27 +84,27 @@ export default function EnhancedHomePage() {
       
       // Try to extract and parse query understanding from response
       try {
-        const filterMatch = aiResponse.match(/Filters applied: ([^]*?)(?:Number|$)/);
+        const filterMatch = aiResponse.match(/Applied Filters: ([^]*?)(?:Number|$)/);
         if (filterMatch && filterMatch[1]) {
           const filters: ParsedQuery = {};
           const filterText = filterMatch[1].trim();
           
-          const yearMatch = filterText.match(/Year: (\d{4})/);
+          const yearMatch = filterText.match(/Year: FY(\d{4})/);
           if (yearMatch) filters.year = parseInt(yearMatch[1]);
           
-          const agencyMatch = filterText.match(/Agency: Department of ([^,]+)/);
+          const agencyMatch = filterText.match(/Agency: Department of ([^,|]+)/);
           if (agencyMatch) filters.agency = agencyMatch[1].trim();
           
-          const locationMatch = filterText.match(/Location: ([^,]+)/);
+          const locationMatch = filterText.match(/Location: ([^,|]+)/);
           if (locationMatch) filters.location = locationMatch[1].trim();
           
-          const memberMatch = filterText.match(/Member: ([^,]+)/);
+          const memberMatch = filterText.match(/Member: ([^,|]+)/);
           if (memberMatch) filters.member = memberMatch[1].trim();
           
-          const minAmountMatch = filterText.match(/Minimum Amount: \$([0-9,]+)/);
+          const minAmountMatch = filterText.match(/Min Amount: \$([0-9,]+)/);
           if (minAmountMatch) filters.minAmount = parseInt(minAmountMatch[1].replace(/,/g, ''));
           
-          const maxAmountMatch = filterText.match(/Maximum Amount: \$([0-9,]+)/);
+          const maxAmountMatch = filterText.match(/Max Amount: \$([0-9,]+)/);
           if (maxAmountMatch) filters.maxAmount = parseInt(maxAmountMatch[1].replace(/,/g, ''));
           
           if (Object.keys(filters).length > 0) {
@@ -240,50 +120,11 @@ export default function EnhancedHomePage() {
     } catch {
       setMessages((ms) => [
         ...ms.slice(0, -1),
-        { text: "Sorry, I'm having trouble connecting right now. Please try again.", sender: "ai", id: Date.now() },
+        { text: "I'm experiencing connectivity issues. Please try again in a moment.", sender: "ai", id: Date.now() },
       ]);
     } finally {
       setIsLoading(false);
     }
-  }
-  
-  /* Handle clicking on a sample query */
-  function handleSampleQuery(query: string) {
-    setInput(query);
-    // Focus the input and auto-submit
-    setTimeout(() => {
-      inputRef.current?.focus();
-      formRef.current?.requestSubmit();
-    }, 100);
-  }
-
-  /* Build and send query from guided query builder */
-  function buildAndSendQuery(year?: number | null, agency?: string | null, state?: string | null) {
-    if (!year && !agency && !state) {
-      return;
-    }
-    
-    let queryText = "Show me earmarks";
-    
-    if (agency) {
-      queryText += ` from the Department of ${agency}`;
-    }
-    
-    if (year) {
-      queryText += ` in ${year}`;
-    }
-    
-    if (state) {
-      const stateName = states.find(s => s.value === state)?.label || state;
-      queryText += ` in ${stateName}`;
-    }
-    
-    setInput(queryText);
-    
-    setTimeout(() => {
-      inputRef.current?.focus();
-      formRef.current?.requestSubmit();
-    }, 300);
   }
 
   /* Handle feedback for responses */
@@ -309,7 +150,6 @@ export default function EnhancedHomePage() {
     setMessages([]);
     clearConversation();
     setFeedbackGiven({});
-    setShowQueryBuilder(true);
     setParsedQuery(null);
     setInput("");
   }
@@ -320,6 +160,33 @@ export default function EnhancedHomePage() {
     root.dataset.theme = root.dataset.theme === "dark" ? "" : "dark";
   }
 
+  /* ——————————————————————————————————————————
+     Format AI response for better display
+  —————————————————————————————————————————— */
+  function formatAIResponse(raw: string): string {
+    const labelPattern = /^(FY Year|Amount|Location|Subcommittee|Department|Agency|Account|Member):/i;
+
+    const lines = (raw ?? '')
+      .split('\n')
+      .map((ln, idx) => {
+        const trimmed = ln.trim();
+        if (!trimmed) return '';
+
+        // First non‑blank line → treat as project title
+        if (idx === 0) {
+          return `**${trimmed}**`;
+        }
+
+        // Bold recognised labels
+        if (labelPattern.test(trimmed)) {
+          return trimmed.replace(labelPattern, match => `**${match}**`);
+        }
+
+        return trimmed;
+      });
+
+    return lines.filter((l, i, arr) => l !== '' || arr[i - 1] !== '').join('\n');
+  }
 
   /* Format earmark-specific data sections */
   function formatEarmarkData(text: string) {
@@ -337,48 +204,33 @@ export default function EnhancedHomePage() {
         {sections.map((section, i) => {
           if (section.includes("SAMPLE RECORDS:")) {
             const recordsContent = section.replace("SAMPLE RECORDS:", "").trim();
-            console.log("DEBUG - Raw records content:", recordsContent);
             
-            // Split projects by numbered lines (1., 2., etc.) or by double newlines
             const projects = recordsContent.split(/(?=\d+\.\s)|(?:\n\n)/).filter(line => line.trim());
-            console.log("DEBUG - Split projects:", projects);
             
             return (
               <div key={i} className="records-section">
-                <h4>📋 Projects</h4>
+                <h4>📊 Federal Funding Projects</h4>
                 <div className="project-list">
                   {projects.map((project, index) => {
-                    console.log("DEBUG - Raw project:", project);
-                    
-                    // Extract title - first line or numbered line
                     const lines = project.trim().split('\n');
                     let title = lines[0].trim();
                     
-                    // Remove number prefix if present
                     title = title.replace(/^\d+\.\s*/, '');
                     
-                    // Parse field-value pairs from all lines
                     const details: Record<string, string> = {};
                     
                     lines.forEach(line => {
                       const trimmedLine = line.trim();
                       
-                      // Skip empty lines and the title line
                       if (!trimmedLine || trimmedLine === title) return;
                       
-                      // Look for "Field: Value" pattern
                       const colonIndex = trimmedLine.indexOf(':');
                       if (colonIndex > 0) {
                         const key = trimmedLine.substring(0, colonIndex).trim();
                         const value = trimmedLine.substring(colonIndex + 1).trim();
-                        
-                        // Convert key to lowercase for consistent lookup
                         details[key.toLowerCase()] = value;
                       }
                     });
-                    
-                    console.log("DEBUG - Project title:", title);
-                    console.log("DEBUG - Project details:", details);
 
                     return (
                       <div key={index} className="project-card">
@@ -389,7 +241,7 @@ export default function EnhancedHomePage() {
                         <div className="project-details">
                           {details['fy year'] && (
                             <div className="project-detail">
-                              <span className="detail-label">FY Year</span>
+                              <span className="detail-label">Fiscal Year</span>
                               <span className="detail-value">{details['fy year']}</span>
                             </div>
                           )}
@@ -403,18 +255,6 @@ export default function EnhancedHomePage() {
                             <div className="project-detail">
                               <span className="detail-label">Location</span>
                               <span className="detail-value">{details.location}</span>
-                            </div>
-                          )}
-                          {details.subcommittee && (
-                            <div className="project-detail">
-                              <span className="detail-label">Subcommittee</span>
-                              <span className="detail-value">{details.subcommittee}</span>
-                            </div>
-                          )}
-                          {details.department && (
-                            <div className="project-detail">
-                              <span className="detail-label">Department</span>
-                              <span className="detail-value">{details.department}</span>
                             </div>
                           )}
                           {details.agency && (
@@ -431,7 +271,7 @@ export default function EnhancedHomePage() {
                           )}
                           {details.member && (
                             <div className="project-detail full-width">
-                              <span className="detail-label">Member</span>
+                              <span className="detail-label">Congressional Member</span>
                               <span className="detail-value member-value">{details.member}</span>
                             </div>
                           )}
@@ -443,12 +283,12 @@ export default function EnhancedHomePage() {
               </div>
             );
           } 
-          else if (section.includes("STATISTICS:")) {
+          else if (section.includes("ANALYSIS CONTEXT:")) {
             return (
               <div key={i} className="stats-section">
-                <h4>📊 Key Statistics</h4>
+                <h4>📈 Analysis Summary</h4>
                 <div className="stats-grid">
-                  {section.replace("STATISTICS:", "").trim().split('\n').map((stat, j) => {
+                  {section.replace("ANALYSIS CONTEXT:", "").trim().split('\n').map((stat, j) => {
                     const cleanStat = stat.trim().replace(/^-\s*/, '');
                     return (
                       <div key={j} className="stat-card"
@@ -459,13 +299,10 @@ export default function EnhancedHomePage() {
               </div>
             );
           }
-          else if (section.includes("records found") || section.includes("DATABASE CONTEXT:")) {
-            return <div key={i} className="info-banner" dangerouslySetInnerHTML={{ __html: section }} />;
-          }
-          else if (section.includes("DOCUMENT SEARCH")) {
+          else if (section.includes("DOCUMENT CONTEXT")) {
             return (
               <div key={i} className="document-section">
-                <h4>📄 Document Sources</h4>
+                <h4>📄 Reference Sources</h4>
                 <div className="document-content" dangerouslySetInnerHTML={{ __html: section }} />
               </div>
             );
@@ -478,7 +315,6 @@ export default function EnhancedHomePage() {
 
   /* Format general AI responses with proper paragraphs and structure */
   function formatGeneralResponse(text: string) {
-    // Split into paragraphs
     const paragraphs = text.split('\n\n').filter(p => p.trim().length > 0);
     
     return (
@@ -486,22 +322,18 @@ export default function EnhancedHomePage() {
         {paragraphs.map((paragraph, i) => {
           const trimmed = paragraph.trim();
           
-          // Check if it's a heading (starts with specific patterns)
           if (isHeading(trimmed)) {
             return formatHeading(trimmed, i);
           }
           
-          // Check if it's a list
           if (isList(trimmed)) {
             return formatList(trimmed, i);
           }
           
-          // Check if it's a quote or callout
           if (isCallout(trimmed)) {
             return formatCallout(trimmed, i);
           }
           
-          // Regular paragraph
           return (
             <div key={i} className="response-paragraph">
               <ReactMarkdown
@@ -518,7 +350,7 @@ export default function EnhancedHomePage() {
   /* Helper functions for response formatting */
   function isHeading(text: string): boolean {
     return /^(#{1,6}\s|[A-Z][^.!?]*:$|^\*\*[^*]+\*\*$)/.test(text) ||
-           text.includes('INSTRUCTIONS:') ||
+           text.includes('GUIDANCE:') ||
            text.includes('KEY POINTS:') ||
            text.includes('SUMMARY:') ||
            text.includes('FINDINGS:');
@@ -608,7 +440,6 @@ export default function EnhancedHomePage() {
   }
 
   function formatTextSection(text: string, key: number) {
-    // Handle dollar amounts in any text section
     const withFormattedAmounts = text.replace(/\$[\d,.]+ (?:m(?:illion)?)?/g, (match) => {
       const isLarge = match.includes('million') || 
                      parseInt(match.replace(/[$,]/g, '')) >= 1000000;
@@ -625,27 +456,33 @@ export default function EnhancedHomePage() {
   /* ── Render ─────────────────────────────────────── */
   return (
     <div className="app-container">
-      {/* Header */}
+      {/* Professional Header */}
       <header className="app-header">
         <div className="header-content">
-          <Link href="/" className="app-logo">
-            <img src="/mosaic-logo.svg" alt="MOSAIC" className="logo-image" width="200" height="60" />
-          </Link>
+          <div className="logo-section">
+            <div className="logo-icon">M</div>
+            <div>
+              <div className="logo-text">MOSAIC</div>
+              <p className="capabilities-text">
+                AI-powered federal funding analysis with natural language search across Congressional earmarks and appropriations data
+              </p>
+            </div>
+          </div>
           
           <div className="header-actions">
-            <Link href="/admin" className="header-btn">
-              📚 Admin
-            </Link>
             <button 
               onClick={handleClearChat} 
               className="header-btn" 
               disabled={messages.length === 0}
             >
-              ✨ New Chat
+              ✨ New Session
             </button>
             <button onClick={toggleTheme} className="header-btn">
               🌙 Theme
             </button>
+            <Link href="/admin" className="header-btn primary">
+              ⚙️ Admin
+            </Link>
           </div>
         </div>
       </header>
@@ -653,36 +490,37 @@ export default function EnhancedHomePage() {
       {/* Main Content */}
       <main className="main-content">
         <div className="content-wrapper">
-          {/* Hero Section */}
+          {/* Professional Hero Section */}
           {messages.length === 0 && (
             <div className="hero-section">
               <div className="hero-badge">
-                <span>✨</span>
-                AI-Powered Federal Earmark Analysis
+                <span>🏛️</span>
+                Federal Intelligence Platform
               </div>
-              <h1 className="hero-title text-balance">
-                Discover Federal Earmarks with Natural Language
+              <h1 className="hero-title">
+                UNLOCK FEDERAL FUNDING INSIGHTS
               </h1>
               <p className="hero-subtitle">
-                Ask questions about federal funding, analyze earmark data, and explore government spending patterns using our AI-powered search interface.
+                Search, analyze, and understand Congressional earmarks and federal appropriations using advanced AI. 
+                Get instant answers about government funding, agency allocations, and legislative patterns.
               </p>
             </div>
           )}
 
-          {/* Chat Interface */}
+          {/* Professional Chat Interface */}
           <div className="chat-container">
             <div className="chat-panel">
               <div className="chat-header">
-                <h2 className="chat-title">💬 AI Earmark Assistant</h2>
+                <h2 className="chat-title">🤖 Federal Funding AI Assistant</h2>
               </div>
 
               {/* Query Understanding Display */}
               {parsedQuery && Object.keys(parsedQuery).length > 0 && (
                 <div className="query-understanding">
-                  <h4>🎯 Query understood as:</h4>
+                  <h4>🎯 Query Analysis:</h4>
                   <div className="parsed-filters">
-                    {parsedQuery.year && <span className="filter-tag">📅 {parsedQuery.year}</span>}
-                    {parsedQuery.agency && <span className="filter-tag">🏛️ Department of {parsedQuery.agency}</span>}
+                    {parsedQuery.year && <span className="filter-tag">📅 FY{parsedQuery.year}</span>}
+                    {parsedQuery.agency && <span className="filter-tag">🏛️ {parsedQuery.agency}</span>}
                     {parsedQuery.location && <span className="filter-tag">📍 {parsedQuery.location}</span>}
                     {parsedQuery.member && <span className="filter-tag">👤 {parsedQuery.member}</span>}
                     {parsedQuery.minAmount && <span className="filter-tag">💰 Min: ${parsedQuery.minAmount.toLocaleString()}</span>}
@@ -695,37 +533,42 @@ export default function EnhancedHomePage() {
                 {messages.length === 0 ? (
                   <div className="welcome-card">
                     <div className="welcome-icon">🔍</div>
-                    <h3 className="welcome-title">Welcome to Mosaic</h3>
+                    <h3 className="welcome-title">Federal Funding Intelligence</h3>
                     <p className="welcome-description">
-                      Ask questions about federal earmarks and funding data. I can help you analyze spending patterns, 
-                      find specific allocations, and understand the earmark process.
+                      Ask questions about Congressional earmarks, federal appropriations, agency funding, 
+                      or legislative patterns. Our AI analyzes government spending data to provide 
+                      comprehensive insights and actionable intelligence.
                     </p>
                   </div>
                 ) : (
                   messages.map((msg, idx) => (
                     <div key={idx} className={`message-bubble ${msg.sender}`}>
                       <div className="message-avatar">
-                        {msg.sender === 'user' ? '👤' : '🤖'}
+                        {msg.sender === 'user' ? '🏛️' : '🤖'}
                       </div>
                       <div className="message-content">
                         {msg.sender === "ai" && !msg.typing ? (
                           <>
-                            <div className="message-text">
-                              <ReactMarkdown
-                                remarkPlugins={[remarkBreaks, remarkGfm]}
-                                rehypePlugins={[rehypeRaw]}
-                                components={{
-                                  p: ({node, ...props}) => <p {...props} />,
-                                  strong: ({node, ...props}) => <strong {...props} />,
-                                  em: ({node, ...props}) => <em {...props} />,
-                                  ol: ({node, ...props}) => <ol {...props} />,
-                                  ul: ({node, ...props}) => <ul {...props} />,
-                                  li: ({node, ...props}) => <li {...props} />
-                                }}
-                              >
-                                {formatAIResponse(msg.text)}
-                              </ReactMarkdown>
-                            </div>
+                            {msg.text.includes('SAMPLE RECORDS:') || msg.text.includes('ANALYSIS CONTEXT:') ? (
+                              <div className="message-text">
+                                <ReactMarkdown
+                                  remarkPlugins={[remarkBreaks, remarkGfm]}
+                                  rehypePlugins={[rehypeRaw]}
+                                  components={{
+                                    p:      ({node, ...props}) => <p {...props} />,
+                                    strong: ({node, ...props}) => <strong {...props} />,
+                                    em:     ({node, ...props}) => <em {...props} />,
+                                    ol:     ({node, ...props}) => <ol {...props} />,
+                                    ul:     ({node, ...props}) => <ul {...props} />,
+                                    li:     ({node, ...props}) => <li {...props} />
+                                  }}
+                                >
+                                  {formatAIResponse(msg.text)}
+                                </ReactMarkdown>
+                              </div>
+                            ) : (
+                              formatGeneralResponse(msg.text)
+                            )}
                             {msg.id && (
                               <div className="message-feedback">
                                 {!feedbackGiven[msg.id] ? (
@@ -747,7 +590,7 @@ export default function EnhancedHomePage() {
                                   </div>
                                 ) : (
                                   <div className="feedback-thanks">
-                                    Thanks for the feedback! {feedbackGiven[msg.id] === 'up' ? '👍' : '👎'}
+                                    Feedback received {feedbackGiven[msg.id] === 'up' ? '👍' : '👎'}
                                   </div>
                                 )}
                               </div>
@@ -784,79 +627,13 @@ export default function EnhancedHomePage() {
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Query Builder - show only when no conversation started */}
-              {messages.length === 0 && showQueryBuilder && (
-                <div className="query-builder">
-                  <h3 className="builder-title">
-                    🛠️ Quick Query Builder
-                  </h3>
-                  <div className="builder-controls">
-                    <div className="control-group">
-                      <label className="control-label">Year</label>
-                      <select 
-                        className="control-select"
-                        onChange={(e) => buildAndSendQuery(e.target.value ? parseInt(e.target.value) : null, null, null)}
-                      >
-                        {years.map(year => (
-                          <option key={year.value} value={year.value}>{year.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    
-                    <div className="control-group">
-                      <label className="control-label">Agency</label>
-                      <select 
-                        className="control-select"
-                        onChange={(e) => buildAndSendQuery(null, e.target.value || null, null)}
-                      >
-                        {agencies.map(agency => (
-                          <option key={agency.value} value={agency.value}>{agency.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    
-                    <div className="control-group">
-                      <label className="control-label">State</label>
-                      <select 
-                        className="control-select"
-                        onChange={(e) => buildAndSendQuery(null, null, e.target.value || null)}
-                      >
-                        {states.map(state => (
-                          <option key={state.value} value={state.value}>{state.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Sample Queries Section */}
-              {messages.length === 0 && (
-                <div className="sample-queries">
-                  <h3 className="sample-queries-title">💡 Try asking:</h3>
-                  <div className="sample-queries-grid">
-                    {sampleQueries.map((query, index) => (
-                      <div 
-                        key={index}
-                        className="sample-query-card"
-                        onClick={() => handleSampleQuery(query.text)}
-                      >
-                        <div className="query-icon">{query.icon}</div>
-                        <p className="sample-query-text">{query.text}</p>
-                        <div className="query-category">{query.category}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Chat Input */}
+              {/* Professional Chat Input */}
               <div className="chat-input-container">
                 <form ref={formRef} className="chat-input-form" onSubmit={handleSend}>
                   <textarea
                     ref={inputRef}
                     className="chat-input"
-                    placeholder="Ask me anything about federal earmarks... (Shift+Enter for new line)"
+                    placeholder="Ask about federal funding, earmarks, agency allocations, or legislative patterns... (Shift+Enter for new line)"
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleInputKeyDown}
@@ -874,11 +651,11 @@ export default function EnhancedHomePage() {
                           <div className="loading-dot"></div>
                           <div className="loading-dot"></div>
                         </div>
-                        Thinking...
+                        Processing
                       </>
                     ) : (
                       <>
-                        Send
+                        Analyze
                         <span>🚀</span>
                       </>
                     )}
