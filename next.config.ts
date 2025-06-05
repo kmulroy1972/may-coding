@@ -10,6 +10,8 @@ const nextConfig: NextConfig = {
       allowedOrigins: [],
     },
   },
+  // Allow development access from local network
+  allowedDevOrigins: ['192.168.1.203'],
 };
 
 export default nextConfig;

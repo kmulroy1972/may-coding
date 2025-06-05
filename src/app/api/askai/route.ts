@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ChatOpenAI } from '@langchain/openai';
 import { PromptTemplate } from '@langchain/core/prompts';
 import { supabase } from '@/lib/supabase';
+import { congressApi } from '@/lib/congressApi';
 import type { Earmark } from 'types/database.types';
 import { 
   addMessage, 
@@ -88,7 +89,7 @@ interface ExtractedEntities {
   maxAmount: number | null;
   location: string | null;
   keywords: string[];
-  intent: 'search' | 'list' | 'analyze' | 'compare' | 'summarize' | 'guidance';
+  intent: 'search' | 'list' | 'analyze' | 'compare' | 'summarize' | 'guidance' | 'member_lookup';
   confidence: number;
   equipmentType?: string | null;
 }
@@ -112,8 +113,12 @@ function parseAmount(amountText: string): number {
   return num;
 }
 
-function classifyIntent(question: string): 'search' | 'list' | 'analyze' | 'compare' | 'summarize' | 'guidance' {
+function classifyIntent(question: string): 'search' | 'list' | 'analyze' | 'compare' | 'summarize' | 'guidance' | 'member_lookup' {
   const lowerQ = question.toLowerCase();
+  
+  // Member lookup detection
+  const memberKeywords = ['representative', 'senator', 'congressman', 'congresswoman', 'rep ', 'sen ', 'my representative', 'my senator'];
+  if (memberKeywords.some(keyword => lowerQ.includes(keyword))) return 'member_lookup';
   
   if (lowerQ.includes('compare') || lowerQ.includes('versus') || lowerQ.includes('vs')) return 'compare';
   if (lowerQ.includes('analyze') || lowerQ.includes('analysis') || lowerQ.includes('trend')) return 'analyze';
@@ -259,6 +264,56 @@ function enhancedEntityExtraction(question: string, conversationContext: any = {
   };
 }
 
+/* ────────────────────── Congress Member Integration ─────────────────── */
+async function fetchMemberData(question: string, filters: ExtractedEntities): Promise<string> {
+  try {
+    console.log('🏛️ Fetching Congress member data...');
+    
+    // Extract state from question
+    const statePattern = /\b([A-Z]{2})\b|california|texas|florida|new york|virginia|pennsylvania/gi;
+    const stateMatch = question.match(statePattern);
+    
+    if (!stateMatch) {
+      return '';
+    }
+    
+    // Map common state names to codes
+    const stateMapping: { [key: string]: string } = {
+      'california': 'CA', 'texas': 'TX', 'florida': 'FL', 'new york': 'NY',
+      'virginia': 'VA', 'pennsylvania': 'PA'
+    };
+    
+    const state = stateMatch[0].length === 2 ? 
+      stateMatch[0].toUpperCase() : 
+      stateMapping[stateMatch[0].toLowerCase()] || stateMatch[0];
+    
+    if (!state || state.length !== 2) {
+      return '';
+    }
+    
+    const members = await congressApi.getMembersByState(state);
+    
+    if (members.length === 0) {
+      return `\n\n**Congressional Representatives for ${state}:**\nNo current representatives found.`;
+    }
+    
+    // Limit to prevent overwhelming response
+    const displayMembers = members.slice(0, 8);
+    
+    const membersList = displayMembers.map(member => {
+      const chamber = member.chamber === 'Senate' ? 'Senator' : 'Representative';
+      const district = member.district ? ` (District ${member.district})` : '';
+      return `- **${member.name}** (${member.party}) - ${chamber}${district}`;
+    }).join('\n');
+    
+    return `\n\n**Current Congressional Representatives for ${state}:**\n${membersList}`;
+    
+  } catch (error) {
+    console.error('❌ Error fetching member data:', error);
+    return ''; // Fail silently to not break existing functionality
+  }
+}
+
 /* ────────────────────── Query Builder ─────────────────── */
 async function queryEarmarks(filters: ExtractedEntities): Promise<Earmark[]> {
   console.log('🔍 Building query with filters:', filters);
@@ -395,13 +450,21 @@ Would you like me to search for similar projects in the earmark database?
 }
 
 /* ────────────────────── Enhanced Context Builder ─────────────────── */
-function buildEnhancedContext(
+async function buildEnhancedContext(
   question: string, 
   filters: ExtractedEntities, 
   earmarks: Earmark[], 
   conversationContext: string,
   sessionId: string
-): string {
+): Promise<string> {
+  
+  // Add member data context for relevant queries
+  let memberContext = '';
+  if (filters.intent === 'member_lookup' || 
+      question.toLowerCase().includes('representative') || 
+      question.toLowerCase().includes('senator')) {
+    memberContext = await fetchMemberData(question, filters);
+  }
   
   if (filters.intent === 'guidance') {
     const guidance = generateFundingGuidance(question, filters);
@@ -418,6 +481,8 @@ DETECTED EQUIPMENT: ${filters.equipmentType || 'General'}
 PROVIDE THIS GUIDANCE:
 ${guidance}
 
+${memberContext}
+
 CONTEXTUAL ENHANCEMENT:
 - Adapt your tone to the user's expertise level shown in session context
 - Reference previous related queries if relevant
@@ -429,6 +494,31 @@ INSTRUCTIONS:
 3. Offer to search for similar examples if helpful
 4. Be encouraging and specific about next steps
 5. Provide 2-3 relevant follow-up suggestions at the end
+`;
+  }
+  
+  // Member lookup specific response
+  if (filters.intent === 'member_lookup') {
+    return `
+You are Mosaic's AI assistant for federal earmark analysis and Congressional member information.
+
+${conversationContext}
+
+USER QUERY: "${question}"
+QUERY TYPE: Congressional Member Lookup
+
+${memberContext}
+
+CONTEXTUAL ENHANCEMENT:
+- If specific representatives are identified, you can offer to search for their earmarks
+- Suggest related funding opportunities relevant to their state/district
+- Provide helpful information about contacting representatives
+
+INSTRUCTIONS:
+1. Present the representative information clearly
+2. Offer to search for earmarks sponsored by these members
+3. Suggest how users can contact their representatives about funding
+4. Provide 2-3 relevant follow-up suggestions
 `;
   }
   
@@ -469,6 +559,8 @@ ${earmarks.length > 0 ? `
 SAMPLE RECORDS (showing ${recordsToShow} of ${earmarks.length}):
 ${sampleRecords}
 ` : 'No matching records found.'}
+
+${memberContext}
 
 CONTEXTUAL ENHANCEMENT:
 - Consider the user's session goals and topic progression
@@ -517,9 +609,11 @@ export async function POST(req: NextRequest) {
     const filters = enhancedEntityExtraction(question, queryContext);
     console.log('🎯 Enhanced extraction with context:', filters);
     
-    // Query earmarks (skip for pure guidance queries)
+    // Query earmarks (skip for pure guidance queries and member lookup)
     let earmarks: Earmark[] = [];
-    if (filters.intent !== 'guidance' || question.toLowerCase().includes('example')) {
+    if (filters.intent !== 'guidance' && filters.intent !== 'member_lookup') {
+      earmarks = await queryEarmarks(filters);
+    } else if (filters.intent === 'guidance' && question.toLowerCase().includes('example')) {
       earmarks = await queryEarmarks(filters);
     }
     
@@ -544,7 +638,7 @@ export async function POST(req: NextRequest) {
     });
     
     // Build enhanced context
-    const context = buildEnhancedContext(
+    const context = await buildEnhancedContext(
       question, 
       filters, 
       earmarks, 

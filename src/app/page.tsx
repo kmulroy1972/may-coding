@@ -7,6 +7,7 @@ import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import Link from "next/link";
 import { sendMessageToAI, clearConversation } from "@/lib/sendMessageToAI";
+import MemberLookup from '@/components/MemberLookup';
 import "./globals.css";
 
 /* ── Types ─────────────────────────────────────────── */
@@ -34,6 +35,7 @@ export default function ProfessionalHomePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [feedbackGiven, setFeedbackGiven] = useState<Record<number, 'up' | 'down' | null>>({});
   const [parsedQuery, setParsedQuery] = useState<ParsedQuery | null>(null);
+  const [activeTab, setActiveTab] = useState<'chat' | 'members'>('chat');
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -491,7 +493,7 @@ export default function ProfessionalHomePage() {
       <main className="main-content">
         <div className="content-wrapper">
           {/* Professional Hero Section */}
-          {messages.length === 0 && (
+          {messages.length === 0 && activeTab === 'chat' && (
             <div className="hero-section">
               <div className="hero-badge">
                 <span>🏛️</span>
@@ -507,163 +509,225 @@ export default function ProfessionalHomePage() {
             </div>
           )}
 
-          {/* Professional Chat Interface */}
-          <div className="chat-container">
-            <div className="chat-panel">
-              <div className="chat-header">
-                <h2 className="chat-title">🤖 Federal Funding AI Assistant</h2>
-              </div>
+          {/* Navigation Tabs */}
+          <div className="tab-navigation">
+            <button 
+              onClick={() => setActiveTab('chat')}
+              className={`tab-btn ${activeTab === 'chat' ? 'active' : ''}`}
+            >
+              🤖 AI Assistant
+            </button>
+            <button 
+              onClick={() => setActiveTab('members')}
+              className={`tab-btn ${activeTab === 'members' ? 'active' : ''}`}
+            >
+              🏛️ Find Representatives
+            </button>
+          </div>
 
-              {/* Query Understanding Display */}
-              {parsedQuery && Object.keys(parsedQuery).length > 0 && (
-                <div className="query-understanding">
-                  <h4>🎯 Query Analysis:</h4>
-                  <div className="parsed-filters">
-                    {parsedQuery.year && <span className="filter-tag">📅 FY{parsedQuery.year}</span>}
-                    {parsedQuery.agency && <span className="filter-tag">🏛️ {parsedQuery.agency}</span>}
-                    {parsedQuery.location && <span className="filter-tag">📍 {parsedQuery.location}</span>}
-                    {parsedQuery.member && <span className="filter-tag">👤 {parsedQuery.member}</span>}
-                    {parsedQuery.minAmount && <span className="filter-tag">💰 Min: ${parsedQuery.minAmount.toLocaleString()}</span>}
-                    {parsedQuery.maxAmount && <span className="filter-tag">💰 Max: ${parsedQuery.maxAmount.toLocaleString()}</span>}
-                  </div>
+          {/* Tab Content */}
+          {activeTab === 'members' && (
+            <div className="members-section">
+              <div className="section-header">
+                <div className="hero-badge">
+                  <span>🗳️</span>
+                  Congressional Directory
                 </div>
-              )}
+                <h2 className="section-title">Find Your Representatives</h2>
+                <p className="section-subtitle">
+                  Look up your U.S. House Representatives and Senators by state, district, or name. 
+                  Connect funding opportunities with your elected officials.
+                </p>
+              </div>
+              <MemberLookup />
+            </div>
+          )}
 
-              <div className="chat-messages">
-                {messages.length === 0 ? (
-                  <div className="welcome-card">
-                    <div className="welcome-icon">🔍</div>
-                    <h3 className="welcome-title">Federal Funding Intelligence</h3>
-                    <p className="welcome-description">
-                      Ask questions about Congressional earmarks, federal appropriations, agency funding, 
-                      or legislative patterns. Our AI analyzes government spending data to provide 
-                      comprehensive insights and actionable intelligence.
-                    </p>
+          {activeTab === 'chat' && (
+            <>
+              {/* Professional Chat Interface */}
+              <div className="chat-container">
+                <div className="chat-panel">
+                  <div className="chat-header">
+                    <h2 className="chat-title">🤖 Federal Funding AI Assistant</h2>
+                    <p className="chat-subtitle">Ask about earmarks, representatives, funding guidance, and more</p>
                   </div>
-                ) : (
-                  messages.map((msg, idx) => (
-                    <div key={idx} className={`message-bubble ${msg.sender}`}>
-                      <div className="message-avatar">
-                        {msg.sender === 'user' ? '🏛️' : '🤖'}
+
+                  {/* Query Understanding Display */}
+                  {parsedQuery && Object.keys(parsedQuery).length > 0 && (
+                    <div className="query-understanding">
+                      <h4>🎯 Query Analysis:</h4>
+                      <div className="parsed-filters">
+                        {parsedQuery.year && <span className="filter-tag">📅 FY{parsedQuery.year}</span>}
+                        {parsedQuery.agency && <span className="filter-tag">🏛️ {parsedQuery.agency}</span>}
+                        {parsedQuery.location && <span className="filter-tag">📍 {parsedQuery.location}</span>}
+                        {parsedQuery.member && <span className="filter-tag">👤 {parsedQuery.member}</span>}
+                        {parsedQuery.minAmount && <span className="filter-tag">💰 Min: ${parsedQuery.minAmount.toLocaleString()}</span>}
+                        {parsedQuery.maxAmount && <span className="filter-tag">💰 Max: ${parsedQuery.maxAmount.toLocaleString()}</span>}
                       </div>
-                      <div className="message-content">
-                        {msg.sender === "ai" && !msg.typing ? (
-                          <>
-                            {msg.text.includes('SAMPLE RECORDS:') || msg.text.includes('ANALYSIS CONTEXT:') ? (
+                    </div>
+                  )}
+
+                  <div className="chat-messages">
+                    {messages.length === 0 ? (
+                      <div className="welcome-card">
+                        <div className="welcome-icon">🔍</div>
+                        <h3 className="welcome-title">Federal Funding Intelligence</h3>
+                        <p className="welcome-description">
+                          Ask questions about Congressional earmarks, federal appropriations, agency funding, 
+                          or legislative patterns. I can also help you find your representatives and provide 
+                          funding guidance for your projects.
+                        </p>
+                        <div className="example-queries">
+                          <h4>Try asking:</h4>
+                          <div className="query-examples">
+                            <button 
+                              onClick={() => setInput("Who is my representative in California?")}
+                              className="example-query"
+                            >
+                              "Who is my representative in California?"
+                            </button>
+                            <button 
+                              onClick={() => setInput("Show me Department of Labor earmarks over $1 million")}
+                              className="example-query"
+                            >
+                              "Show me Labor earmarks over $1M"
+                            </button>
+                            <button 
+                              onClick={() => setInput("What account should I request funding for an MRI machine?")}
+                              className="example-query"
+                            >
+                              "Funding guidance for MRI equipment"
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      messages.map((msg, idx) => (
+                        <div key={idx} className={`message-bubble ${msg.sender}`}>
+                          <div className="message-avatar">
+                            {msg.sender === 'user' ? '🏛️' : '🤖'}
+                          </div>
+                          <div className="message-content">
+                            {msg.sender === "ai" && !msg.typing ? (
+                              <>
+                                {msg.text.includes('SAMPLE RECORDS:') || msg.text.includes('ANALYSIS CONTEXT:') ? (
+                                  <div className="message-text">
+                                    <ReactMarkdown
+                                      remarkPlugins={[remarkBreaks, remarkGfm]}
+                                      rehypePlugins={[rehypeRaw]}
+                                      components={{
+                                        p:      ({node, ...props}) => <p {...props} />,
+                                        strong: ({node, ...props}) => <strong {...props} />,
+                                        em:     ({node, ...props}) => <em {...props} />,
+                                        ol:     ({node, ...props}) => <ol {...props} />,
+                                        ul:     ({node, ...props}) => <ul {...props} />,
+                                        li:     ({node, ...props}) => <li {...props} />
+                                      }}
+                                    >
+                                      {formatAIResponse(msg.text)}
+                                    </ReactMarkdown>
+                                  </div>
+                                ) : (
+                                  formatGeneralResponse(msg.text)
+                                )}
+                                {msg.id && (
+                                  <div className="message-feedback">
+                                    {!feedbackGiven[msg.id] ? (
+                                      <div className="feedback-buttons">
+                                        <button 
+                                          onClick={() => handleFeedback(msg.id!, 'up')}
+                                          className="feedback-btn like"
+                                          aria-label="Helpful"
+                                        >
+                                          👍
+                                        </button>
+                                        <button 
+                                          onClick={() => handleFeedback(msg.id!, 'down')}
+                                          className="feedback-btn dislike"
+                                          aria-label="Not helpful"
+                                        >
+                                          👎
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div className="feedback-thanks">
+                                        Feedback received {feedbackGiven[msg.id] === 'up' ? '👍' : '👎'}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </>
+                            ) : msg.typing ? (
+                              <div className="loading-dots">
+                                <div className="loading-dot"></div>
+                                <div className="loading-dot"></div>
+                                <div className="loading-dot"></div>
+                              </div>
+                            ) : (
                               <div className="message-text">
                                 <ReactMarkdown
                                   remarkPlugins={[remarkBreaks, remarkGfm]}
                                   rehypePlugins={[rehypeRaw]}
                                   components={{
-                                    p:      ({node, ...props}) => <p {...props} />,
+                                    p: ({node, ...props}) => <p {...props} />,
                                     strong: ({node, ...props}) => <strong {...props} />,
-                                    em:     ({node, ...props}) => <em {...props} />,
-                                    ol:     ({node, ...props}) => <ol {...props} />,
-                                    ul:     ({node, ...props}) => <ul {...props} />,
-                                    li:     ({node, ...props}) => <li {...props} />
+                                    em: ({node, ...props}) => <em {...props} />,
+                                    ol: ({node, ...props}) => <ol {...props} />,
+                                    ul: ({node, ...props}) => <ul {...props} />,
+                                    li: ({node, ...props}) => <li {...props} />
                                   }}
                                 >
-                                  {formatAIResponse(msg.text)}
+                                  {msg.text}
                                 </ReactMarkdown>
                               </div>
-                            ) : (
-                              formatGeneralResponse(msg.text)
                             )}
-                            {msg.id && (
-                              <div className="message-feedback">
-                                {!feedbackGiven[msg.id] ? (
-                                  <div className="feedback-buttons">
-                                    <button 
-                                      onClick={() => handleFeedback(msg.id!, 'up')}
-                                      className="feedback-btn like"
-                                      aria-label="Helpful"
-                                    >
-                                      👍
-                                    </button>
-                                    <button 
-                                      onClick={() => handleFeedback(msg.id!, 'down')}
-                                      className="feedback-btn dislike"
-                                      aria-label="Not helpful"
-                                    >
-                                      👎
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <div className="feedback-thanks">
-                                    Feedback received {feedbackGiven[msg.id] === 'up' ? '👍' : '👎'}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </>
-                        ) : msg.typing ? (
-                          <div className="loading-dots">
-                            <div className="loading-dot"></div>
-                            <div className="loading-dot"></div>
-                            <div className="loading-dot"></div>
                           </div>
-                        ) : (
-                          <div className="message-text">
-                            <ReactMarkdown
-                              remarkPlugins={[remarkBreaks, remarkGfm]}
-                              rehypePlugins={[rehypeRaw]}
-                              components={{
-                                p: ({node, ...props}) => <p {...props} />,
-                                strong: ({node, ...props}) => <strong {...props} />,
-                                em: ({node, ...props}) => <em {...props} />,
-                                ol: ({node, ...props}) => <ol {...props} />,
-                                ul: ({node, ...props}) => <ul {...props} />,
-                                li: ({node, ...props}) => <li {...props} />
-                              }}
-                            >
-                              {msg.text}
-                            </ReactMarkdown>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                )}
-                <div ref={messagesEndRef} />
-              </div>
-
-              {/* Professional Chat Input */}
-              <div className="chat-input-container">
-                <form ref={formRef} className="chat-input-form" onSubmit={handleSend}>
-                  <textarea
-                    ref={inputRef}
-                    className="chat-input"
-                    placeholder="Ask about federal funding, earmarks, agency allocations, or legislative patterns... (Shift+Enter for new line)"
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={handleInputKeyDown}
-                    rows={1}
-                  />
-                  <button
-                    className="chat-send-btn"
-                    type="submit"
-                    disabled={isLoading || !input.trim()}
-                  >
-                    {isLoading ? (
-                      <>
-                        <div className="loading-dots">
-                          <div className="loading-dot"></div>
-                          <div className="loading-dot"></div>
-                          <div className="loading-dot"></div>
                         </div>
-                        Processing
-                      </>
-                    ) : (
-                      <>
-                        Analyze
-                        <span>🚀</span>
-                      </>
+                      ))
                     )}
-                  </button>
-                </form>
+                    <div ref={messagesEndRef} />
+                  </div>
+
+                  {/* Professional Chat Input */}
+                  <div className="chat-input-container">
+                    <form ref={formRef} className="chat-input-form" onSubmit={handleSend}>
+                      <textarea
+                        ref={inputRef}
+                        className="chat-input"
+                        placeholder="Ask about federal funding, earmarks, representatives, or get funding guidance... (Shift+Enter for new line)"
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        onKeyDown={handleInputKeyDown}
+                        rows={1}
+                      />
+                      <button
+                        className="chat-send-btn"
+                        type="submit"
+                        disabled={isLoading || !input.trim()}
+                      >
+                        {isLoading ? (
+                          <>
+                            <div className="loading-dots">
+                              <div className="loading-dot"></div>
+                              <div className="loading-dot"></div>
+                              <div className="loading-dot"></div>
+                            </div>
+                            Processing
+                          </>
+                        ) : (
+                          <>
+                            Analyze
+                            <span>🚀</span>
+                          </>
+                        )}
+                      </button>
+                    </form>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+            </>
+          )}
         </div>
       </main>
     </div>
