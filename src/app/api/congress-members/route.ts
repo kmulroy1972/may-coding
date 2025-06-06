@@ -20,19 +20,52 @@ interface CongressMember {
 }
 
 async function makeCongressRequest(endpoint: string): Promise<any> {
+  console.log('API Key length:', API_KEY ? API_KEY.length : 0);
+  console.log('API Key first 4 chars:', API_KEY ? API_KEY.substring(0, 4) : 'none');
+  
   if (!API_KEY) {
     throw new Error('Congress API key not configured');
   }
 
-  const url = `${CONGRESS_API_BASE}${endpoint}${endpoint.includes('?') ? '&' : '?'}api_key=${API_KEY}&format=json`;
+  // Remove any leading slashes from the endpoint
+  const cleanEndpoint = endpoint.replace(/^\/+/, '');
+  const url = `${CONGRESS_API_BASE}/${cleanEndpoint}${cleanEndpoint.includes('?') ? '&' : '?'}format=json`;
+  
+  console.log('Making request to:', url);
+  console.log('Request headers:', {
+    'X-API-Key': '***' + API_KEY.substring(API_KEY.length - 4),
+    'Accept': 'application/json'
+  });
   
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: {
+        'X-API-Key': API_KEY,
+        'Accept': 'application/json'
+      }
+    });
+    
+    console.log('Response status:', response.status);
+    console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+    
     if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      console.error('Congress API error response:', errorData);
       throw new Error(`Congress API error: ${response.status} ${response.statusText}`);
     }
     
-    return await response.json();
+    const data = await response.json();
+    console.log('Congress API response structure:', {
+      hasMembers: !!data.members,
+      memberCount: data.members?.length,
+      firstMember: data.members?.[0] ? {
+        id: data.members[0].bioguideId,
+        name: data.members[0].name,
+        state: data.members[0].state,
+        terms: data.members[0].terms
+      } : null
+    });
+    return data;
   } catch (error) {
     console.error('Congress API request failed:', error);
     throw error;
@@ -40,20 +73,49 @@ async function makeCongressRequest(endpoint: string): Promise<any> {
 }
 
 function transformMembers(members: any[]): CongressMember[] {
-  return members.map(member => ({
-    bioguideId: member.bioguideId,
-    name: member.name || member.directOrderName || `${member.firstName || ''} ${member.lastName || ''}`.trim(),
-    firstName: member.firstName || '',
-    lastName: member.lastName || '',
-    party: getPartyName(member.party || member.partyName),
-    state: member.state,
-    district: member.district,
-    chamber: getChamberName(member.terms?.[0]?.chamber || member.chamber),
-    officialUrl: member.officialWebsiteUrl,
-    phone: member.phone,
-    officeAddress: member.address?.officeAddress,
-    imageUrl: `https://bioguide.congress.gov/bioguide/photo/${member.bioguideId}.jpg`
-  }));
+  if (!Array.isArray(members)) {
+    console.error('Expected array of members, got:', members);
+    return [];
+  }
+
+  return members
+    .filter(member => {
+      if (!member) {
+        console.error('Invalid member data:', member);
+        return false;
+      }
+
+      // Only include current members
+      const isCurrentMember = member.terms?.some((term: any) => {
+        const isCurrent = term.congress === '118' && term.endDate === null;
+        console.log(`Member ${member.bioguideId} term check:`, { congress: term.congress, endDate: term.endDate, isCurrent });
+        return isCurrent;
+      });
+
+      if (!isCurrentMember) {
+        console.log(`Filtered out non-current member: ${member.bioguideId}`);
+      }
+
+      return isCurrentMember;
+    })
+    .map(member => {
+      const transformed = {
+        bioguideId: member.bioguideId,
+        name: member.name || member.directOrderName || `${member.firstName || ''} ${member.lastName || ''}`.trim(),
+        firstName: member.firstName || '',
+        lastName: member.lastName || '',
+        party: getPartyName(member.party || member.partyName),
+        state: member.state,
+        district: member.district,
+        chamber: getChamberName(member.terms?.[0]?.chamber || member.chamber),
+        officialUrl: member.officialWebsiteUrl,
+        phone: member.phone,
+        officeAddress: member.address?.officeAddress,
+        imageUrl: `https://bioguide.congress.gov/bioguide/photo/${member.bioguideId}.jpg`
+      };
+      console.log('Transformed member:', transformed);
+      return transformed;
+    });
 }
 
 function getPartyName(party: string): string {
@@ -84,6 +146,8 @@ export async function GET(request: NextRequest) {
     const name = searchParams.get('name');
     const bioguideId = searchParams.get('bioguideId');
 
+    console.log('Request params:', { type, state, district, name, bioguideId });
+
     // Validate required parameters based on search type
     if (!type) {
       return NextResponse.json(
@@ -92,7 +156,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    let results;
+    let results: CongressMember[] = [];
 
     switch (type) {
       case 'state':
@@ -111,8 +175,19 @@ export async function GET(request: NextRequest) {
           );
         }
         
-        const stateData = await makeCongressRequest(`/member?currentMember=true&state=${state.toUpperCase()}&limit=250`);
-        results = transformMembers(stateData.members || []);
+        // Get current members for the state
+        const stateData = await makeCongressRequest(`member?currentMember=true&state=${state.toUpperCase()}&limit=250`);
+        console.log('State data response:', JSON.stringify(stateData, null, 2));
+        
+        if (!stateData.members || !Array.isArray(stateData.members)) {
+          console.error('Invalid state data response:', stateData);
+          return NextResponse.json(
+            { error: 'Invalid response from Congress API' },
+            { status: 500 }
+          );
+        }
+        
+        results = transformMembers(stateData.members);
         break;
 
       case 'district':
@@ -131,8 +206,19 @@ export async function GET(request: NextRequest) {
           );
         }
         
-        const districtData = await makeCongressRequest(`/member/congress/118/${state.toUpperCase()}/${districtNum}?currentMember=true`);
-        const members = transformMembers(districtData.members || []);
+        // Get current member for the district
+        const districtData = await makeCongressRequest(`member?currentMember=true&state=${state.toUpperCase()}&district=${districtNum}&limit=1`);
+        console.log('District data response:', JSON.stringify(districtData, null, 2));
+        
+        if (!districtData.members || !Array.isArray(districtData.members)) {
+          console.error('Invalid district data response:', districtData);
+          return NextResponse.json(
+            { error: 'Invalid response from Congress API' },
+            { status: 500 }
+          );
+        }
+        
+        const members = transformMembers(districtData.members);
         results = members.length > 0 ? [members[0]] : [];
         break;
 
@@ -144,8 +230,19 @@ export async function GET(request: NextRequest) {
           );
         }
         
-        const allMembersData = await makeCongressRequest(`/member?currentMember=true&limit=250`);
-        const allMembers = transformMembers(allMembersData.members || []);
+        // Get all current members and filter by name
+        const allMembersData = await makeCongressRequest(`member?currentMember=true&limit=250`);
+        console.log('All members data response:', JSON.stringify(allMembersData, null, 2));
+        
+        if (!allMembersData.members || !Array.isArray(allMembersData.members)) {
+          console.error('Invalid all members data response:', allMembersData);
+          return NextResponse.json(
+            { error: 'Invalid response from Congress API' },
+            { status: 500 }
+          );
+        }
+        
+        const allMembers = transformMembers(allMembersData.members);
         
         const searchTerms = name.toLowerCase().split(' ');
         results = allMembers.filter(member => {
@@ -169,13 +266,19 @@ export async function GET(request: NextRequest) {
           );
         }
         
-        const memberData = await makeCongressRequest(`/member/${bioguideId}`);
-        const memberDetails = memberData.member;
-        if (memberDetails) {
-          results = [transformMembers([memberDetails])[0]];
-        } else {
-          results = [];
+        const memberData = await makeCongressRequest(`member/${bioguideId}`);
+        console.log('Member details response:', JSON.stringify(memberData, null, 2));
+        
+        if (!memberData.member) {
+          console.error('Invalid member details response:', memberData);
+          return NextResponse.json(
+            { error: 'Invalid response from Congress API' },
+            { status: 500 }
+          );
         }
+        
+        const memberDetails = memberData.member;
+        results = [transformMembers([memberDetails])[0]];
         break;
 
       default:
@@ -202,6 +305,7 @@ export async function GET(request: NextRequest) {
       timestamp: new Date().toISOString()
     };
 
+    console.log('Final response:', JSON.stringify(response, null, 2));
     return NextResponse.json(response);
 
   } catch (error) {
